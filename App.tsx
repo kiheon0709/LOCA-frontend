@@ -1,20 +1,29 @@
+import React from 'react';
+import { NavigationContainer } from '@react-navigation/native';
 import { StatusBar } from 'expo-status-bar';
-import { StyleSheet, Text, View } from 'react-native';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
+import { useFonts } from 'expo-font';
+
+import TabNavigator from './src/navigation/TabNavigator';
 
 export default function App() {
+  const [loaded] = useFonts({
+    'BookkGothic-Light': require('./assets/fonts/bookkgothic/BookkGothic_Light.ttf'),
+    'BookkGothic-Bold': require('./assets/fonts/bookkgothic/BookkGothic_Bold.ttf'),
+    'BookkMyungjo-Bold': require('./assets/fonts/bookkmyungjo/BookkMyungjo_Bold.ttf'),
+    'BookkMyungjo-Light': require('./assets/fonts/bookkmyungjo/BookkMyungjo_Light.ttf'),
+  });
+
+  if (!loaded) {
+    return null; // 폰트 로딩 중에는 아무것도 표시하지 않음
+  }
+
   return (
-    <View style={styles.container}>
-      <Text>Open up App.tsx to start working on your app!</Text>
-      <StatusBar style="auto" />
-    </View>
+    <SafeAreaProvider>
+      <NavigationContainer>
+        <TabNavigator />
+        <StatusBar style="auto" />
+      </NavigationContainer>
+    </SafeAreaProvider>
   );
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#fff',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-});
