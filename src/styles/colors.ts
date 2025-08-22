@@ -22,4 +22,11 @@ export const colors = {
   // 보더 컬러
   border: '#E8E4DD',         // 연한 베이지 보더
   borderLight: '#F0EDE7',    // 매우 연한 베이지
+  
+  // 추가 색상들
+  white: '#FFFFFF',          // 흰색
+  gray: '#9E9E9E',           // 회색
+  green: '#8B9D83',          // 초록색
+  red: '#B8860B',            // 빨간색
+  lightGray: '#F5F5F5',      // 연한 회색
 };

@@ -6,10 +6,15 @@ import HomeScreen from '../screens/HomeScreen';
 import SearchScreen from '../screens/SearchScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import { User } from '../services/api';
 
 const Tab = createBottomTabNavigator();
 
-export default function TabNavigator() {
+interface TabNavigatorProps {
+  selectedUser: User;
+}
+
+export default function TabNavigator({ selectedUser }: TabNavigatorProps) {
   const inspirationRef = useRef(null);
 
   return (
@@ -38,7 +43,7 @@ export default function TabNavigator() {
       })}
     >
       <Tab.Screen 
-        name="Inspiration" 
+        name="Inspiration"
         options={{ tabBarLabel: '영감' }}
         listeners={({ navigation }) => ({
           tabPress: (e) => {
@@ -53,7 +58,7 @@ export default function TabNavigator() {
           },
         })}
       >
-        {() => <HomeScreen ref={inspirationRef} />}
+        {() => <HomeScreen ref={inspirationRef} selectedUser={selectedUser} />}
       </Tab.Screen>
       <Tab.Screen 
         name="Archive" 

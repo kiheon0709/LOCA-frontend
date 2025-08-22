@@ -3,6 +3,9 @@
 # dependencies
 node_modules/
 
+DESIGN_PROMPT.md
+.cursor/
+
 # Expo
 .expo/
 dist/
