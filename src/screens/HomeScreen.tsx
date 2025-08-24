@@ -1,10 +1,11 @@
 import React, { useState, useRef, useImperativeHandle, forwardRef, useEffect } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Image, Alert, PanResponder, TextInput, FlatList, ActivityIndicator } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Image, Alert, PanResponder, TextInput, FlatList, ActivityIndicator, ScrollView } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageInfo } from 'expo-image-picker';
-import { apiService, User } from '../services/api';
+import { apiService, User, Photo } from '../services/api';
 import { colors } from '../styles/colors';
+import ImageUploadScreen from './ImageUploadScreen';
 
 const { height, width } = Dimensions.get('window');
 
@@ -15,6 +16,8 @@ interface HomeScreenProps {
 const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
   const [currentKeyword, setCurrentKeyword] = useState<string>('');
   const [currentKeywordId, setCurrentKeywordId] = useState<number>(1);
+  const [isTodayKeyword, setIsTodayKeyword] = useState<boolean>(true);
+  const [sortOrder, setSortOrder] = useState<'latest' | 'popular'>('popular');
   const [uploadedPhoto, setUploadedPhoto] = useState<string | null>(null);
   const [imageInfo, setImageInfo] = useState<{width: number, height: number} | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -27,17 +30,27 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
   const [keywords, setKeywords] = useState<{ id: number; keyword: string; category?: string }[]>([]);
   const [isKeywordLoading, setIsKeywordLoading] = useState(false);
   const searchDebounceRef = useRef<NodeJS.Timeout | null>(null);
+  const [isImageUploadVisible, setIsImageUploadVisible] = useState(false);
+  const [keywordPhotos, setKeywordPhotos] = useState<Photo[]>([]);
+  const [isPhotosLoading, setIsPhotosLoading] = useState(false);
+  const [allKeywordPhotos, setAllKeywordPhotos] = useState<Photo[]>([]);
+  const [isAllPhotosLoading, setIsAllPhotosLoading] = useState(false);
+  const [likedPhotos, setLikedPhotos] = useState<Set<number>>(new Set());
 
   const handleScroll = Animated.event(
     [{ nativeEvent: { contentOffset: { y: scrollY } } }],
     { useNativeDriver: false }
   );
 
-  // 컴포넌트 마운트 시 연결 상태 확인 및 랜덤 키워드 설정
+  // 컴포넌트 마운트 시 연결 상태 확인 및 시간 기반 키워드 설정
   useEffect(() => {
     checkConnection();
-    getRandomKeyword();
+    getCurrentTimeBasedKeyword();
   }, []);
+
+
+
+
 
   const checkConnection = async () => {
     try {
@@ -49,11 +62,50 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
     }
   };
 
+  const getCurrentTimeBasedKeyword = async () => {
+    try {
+      const now = new Date();
+      const hour = now.getHours();
+      const isMorning = hour >= 7 && hour < 19; // 7시~19시는 아침, 19시~7시는 저녁
+      
+      // 시간대별로 다른 키워드 가져오기
+      const keyword = await apiService.getTimeBasedKeyword(isMorning);
+      console.log('시간 기반 키워드 결과:', keyword);
+      setCurrentKeyword(keyword.keyword);
+      setCurrentKeywordId(keyword.id);
+      setIsTodayKeyword(true);
+      // 키워드 변경 시 해당 키워드의 사진들 로드
+      loadKeywordPhotos(keyword.id);
+      loadAllKeywordPhotos(keyword.id);
+    } catch (error) {
+      console.error('시간 기반 키워드 조회 실패:', error);
+      // 백업 키워드
+      const backupKeywords = [
+        '비 내리는 저녁의 쓸쓸한 골목길',
+        '저녁의 노을지는 한적한 공원',
+        '퇴근길 버스 정류장',
+        '활기찬 놀이터'
+      ];
+      const randomIndex = Math.floor(Math.random() * backupKeywords.length);
+      setCurrentKeyword(backupKeywords[randomIndex]);
+      setCurrentKeywordId(1); // 기본값
+      setIsTodayKeyword(true);
+      loadKeywordPhotos(1);
+      loadAllKeywordPhotos(1);
+    }
+  };
+
   const getRandomKeyword = async () => {
     try {
       const keyword = await apiService.getRandomKeyword();
+      console.log('랜덤 키워드 결과:', keyword);
       setCurrentKeyword(keyword.keyword);
       setCurrentKeywordId(keyword.id);
+      setIsTodayKeyword(false);
+      setUploadedPhoto(null); // 키워드 변경 시 업로드된 사진 초기화
+      // 키워드 변경 시 해당 키워드의 사진들 로드
+      loadKeywordPhotos(keyword.id);
+      loadAllKeywordPhotos(keyword.id);
     } catch (error) {
       console.error('랜덤 키워드 조회 실패:', error);
       // 백업 키워드
@@ -66,6 +118,44 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
       const randomIndex = Math.floor(Math.random() * backupKeywords.length);
       setCurrentKeyword(backupKeywords[randomIndex]);
       setCurrentKeywordId(1); // 기본값
+      setIsTodayKeyword(false);
+      setUploadedPhoto(null); // 키워드 변경 시 업로드된 사진 초기화
+      loadKeywordPhotos(1);
+      loadAllKeywordPhotos(1);
+    }
+  };
+
+  // 현재 유저가 현재 키워드에 올린 사진들 로드
+  const loadKeywordPhotos = async (keywordId: number) => {
+    try {
+      setIsPhotosLoading(true);
+      console.log('loadKeywordPhotos 호출:', { keywordId, userId: selectedUser.id });
+      const photos = await apiService.getPhotos(keywordId, selectedUser.id);
+      console.log('loadKeywordPhotos 결과:', photos);
+      console.log('첫 번째 사진 데이터:', photos[0]);
+      setKeywordPhotos(photos);
+    } catch (error) {
+      console.error('키워드 사진 로드 실패:', error);
+      setKeywordPhotos([]);
+    } finally {
+      setIsPhotosLoading(false);
+    }
+  };
+
+  // 현재 키워드의 모든 유저 사진들 로드 (내 사진 제외)
+  const loadAllKeywordPhotos = async (keywordId?: number) => {
+    try {
+      setIsAllPhotosLoading(true);
+      const targetKeywordId = keywordId || currentKeywordId;
+      const photos = await apiService.getPhotos(targetKeywordId, undefined);
+      // 현재 유저의 사진 제외
+      const otherUsersPhotos = photos.filter(photo => photo.user_id !== selectedUser.id);
+      setAllKeywordPhotos(otherUsersPhotos);
+    } catch (error) {
+      console.error('전체 키워드 사진 로드 실패:', error);
+      setAllKeywordPhotos([]);
+    } finally {
+      setIsAllPhotosLoading(false);
     }
   };
 
@@ -79,38 +169,86 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
     return `${year}년 ${month}월 ${date}일, ${timeOfDay} 영감`;
   };
 
-  // 이미지 업로드 함수
-  const handleImageUpload = async () => {
-    try {
-      setIsLoading(true);
-      
-      // 갤러리에서 이미지 선택
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: false, // 크롭 기능 비활성화하여 원본 이미지 그대로 사용
-        quality: 0.8,
-      });
+  // 이미지 업로드 Modal 열기
+  const handleImageUpload = () => {
+    setIsImageUploadVisible(true);
+  };
 
-      if (!result.canceled && result.assets[0]) {
-        const asset = result.assets[0];
-        setUploadedPhoto(asset.uri);
-        setImageInfo({ width: asset.width, height: asset.height });
-        
-        // 백엔드에 업로드 시도
-        try {
-          // asset 객체를 직접 전달 (파일 변환 없이)
-          await apiService.uploadPhoto(asset, selectedUser.id, currentKeywordId);
-          Alert.alert('성공', '사진이 업로드되었습니다!');
-        } catch (uploadError) {
-          console.error('백엔드 업로드 실패:', uploadError);
-          Alert.alert('업로드 완료', '사진이 선택되었습니다! (백엔드 연결 확인 중)');
-        }
+  // 이미지 업로드 성공 처리
+  const handleUploadSuccess = (imageUri: string) => {
+    setUploadedPhoto(imageUri);
+    // 업로드 성공 시 현재 키워드의 사진들 새로고침
+    loadKeywordPhotos(currentKeywordId);
+    loadAllKeywordPhotos(currentKeywordId);
+  };
+
+  // 좋아요 토글 처리
+  const handleLikeToggle = async (photoId: number) => {
+    try {
+      const isLiked = likedPhotos.has(photoId);
+      
+      if (isLiked) {
+        // 좋아요 취소
+        await apiService.unlikePhoto(photoId, selectedUser.id);
+        setLikedPhotos(prev => {
+          const newSet = new Set(prev);
+          newSet.delete(photoId);
+          return newSet;
+        });
+      } else {
+        // 좋아요 추가
+        await apiService.likePhoto(photoId, selectedUser.id);
+        setLikedPhotos(prev => new Set(prev).add(photoId));
       }
+      
+      // 좋아요 수 업데이트를 위해 사진 목록 새로고침
+      loadAllKeywordPhotos(currentKeywordId);
     } catch (error) {
-      console.error('이미지 선택 실패:', error);
-      Alert.alert('오류', '이미지 선택에 실패했습니다.');
-    } finally {
-      setIsLoading(false);
+      console.error('좋아요 토글 실패:', error);
+      Alert.alert('오류', '좋아요 처리에 실패했습니다.');
+    }
+  };
+
+  // 사진 삭제 처리
+  const handleDeletePhoto = async (photoId: number) => {
+    Alert.alert(
+      '사진 삭제',
+      '이 사진을 삭제하시겠습니까?',
+      [
+        {
+          text: '취소',
+          style: 'cancel',
+        },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiService.deletePhoto(photoId);
+              // 삭제 성공 시 사진 목록 새로고침
+              loadKeywordPhotos(currentKeywordId);
+              loadAllKeywordPhotos(currentKeywordId);
+            } catch (error) {
+              console.error('사진 삭제 실패:', error);
+              Alert.alert('삭제 실패', '사진을 삭제하는 중 오류가 발생했습니다.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleSortToggle = () => {
+    setSortOrder(sortOrder === 'latest' ? 'popular' : 'latest');
+  };
+
+  const getSortedPhotos = () => {
+    if (sortOrder === 'latest') {
+      return [...allKeywordPhotos].sort((a, b) => 
+        new Date(b.uploaded_at).getTime() - new Date(a.uploaded_at).getTime()
+      );
+    } else {
+      return [...allKeywordPhotos].sort((a, b) => b.like_count - a.like_count);
     }
   };
 
@@ -223,13 +361,27 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
         snapToInterval={height}
         decelerationRate="fast"
         scrollEnabled={!isSheetVisible}
+        bounces={false}
+        nestedScrollEnabled={true}
+        onScrollBeginDrag={(event) => {
+          const currentY = event.nativeEvent.contentOffset.y;
+          if (currentY <= 0) {
+            // 메인화면에서 위로 스크롤 시도 시 차단
+            (scrollViewRef.current as any)?.scrollTo({ y: 0, animated: false });
+          }
+        }}
       >
       <View style={styles.screen}>
         {/* 헤더 */}
         <View style={styles.header}>
-          <View style={styles.dateButton}>
-            <Text style={styles.dateText}>{getCurrentDate()}</Text>
-          </View>
+          <TouchableOpacity 
+            style={styles.dateButton} 
+            onPress={isTodayKeyword ? undefined : getCurrentTimeBasedKeyword}
+          >
+            <Text style={styles.dateText}>
+              {isTodayKeyword ? getCurrentDate() : '← 오늘의 키워드로'}
+            </Text>
+          </TouchableOpacity>
           <View style={styles.headerRight}>
             <TouchableOpacity style={styles.randomButton} onPress={getRandomKeyword}>
               <Ionicons name="reload" size={15} color="#000000" />
@@ -253,12 +405,12 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
         {/* 메인 콘텐츠 */}
         <View style={[
           styles.mainContent,
-          uploadedPhoto ? styles.mainContentWithPhoto : styles.mainContentWithoutPhoto
+          (uploadedPhoto || keywordPhotos.length > 0) ? styles.mainContentWithPhoto : styles.mainContentWithoutPhoto
         ]}>
           {/* 키워드 */}
           <Text style={[
             styles.keywordText,
-            uploadedPhoto && styles.keywordTextWithPhoto
+            (uploadedPhoto || keywordPhotos.length > 0) && styles.keywordTextWithPhoto
           ]}>
             {currentKeyword}
           </Text>
@@ -282,19 +434,100 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
               />
             </View>
           )}
+
+          {/* 현재 유저가 현재 키워드에 올린 사진들 */}
+          {keywordPhotos.length > 0 && (
+            <View style={styles.userPhotosContainer}>
+              <ScrollView 
+                horizontal 
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.userPhotosScrollContent}
+                snapToInterval={width}
+                decelerationRate="fast"
+                snapToAlignment="center"
+              >
+                {keywordPhotos.map((photo) => {
+                  // 이미지 경로를 전체 URL로 변환
+                  const imageUrl = photo.image_path.startsWith('http') 
+                    ? photo.image_path 
+                    : `http://127.0.0.1:8000/${photo.image_path}`;
+                  
+                  // 업로드 시간 포맷팅
+                  const uploadDate = new Date(photo.uploaded_at);
+                  const formattedDate = `${uploadDate.getFullYear()}.${String(uploadDate.getMonth() + 1).padStart(2, '0')}.${String(uploadDate.getDate()).padStart(2, '0')}`;
+                  const formattedTime = `${uploadDate.getHours() > 12 ? '오후' : '오전'} ${uploadDate.getHours() % 12 || 12}:${String(uploadDate.getMinutes()).padStart(2, '0')}`;
+                  
+                  return (
+                    <View key={photo.id} style={[
+                      styles.userPhotoItem,
+                      {
+                        width: width - 40,
+                        height: height * 0.5
+                      }
+                    ]}>
+                      <Image 
+                        source={{ uri: imageUrl }}
+                        style={styles.userPhoto}
+                        resizeMode="cover"
+                        onLoad={() => console.log('이미지 로드 성공:', photo.id, imageUrl)}
+                        onError={(error) => console.log('이미지 로드 실패:', photo.id, imageUrl, error)}
+                      />
+                      {/* 삭제 버튼 */}
+                      <TouchableOpacity 
+                        style={styles.deleteButton}
+                        onPress={() => handleDeletePhoto(photo.id)}
+                      >
+                        <Text style={styles.deleteButtonText}>×</Text>
+                      </TouchableOpacity>
+                      
+                      {/* 위치 및 시간 정보 */}
+                      <View style={styles.photoInfoContainer}>
+                        <View style={styles.photoInfoLeft}>
+                          {photo.location ? (
+                            <View style={styles.locationInfo}>
+                              <Ionicons name="location" size={12} color="#666666" />
+                              <Text style={styles.locationText}>{photo.location}</Text>
+                            </View>
+                          ) : (
+                            <View style={styles.locationInfo}>
+                              <Ionicons name="location" size={12} color="#CCCCCC" />
+                              <Text style={styles.locationTextDisabled}>위치 정보 없음</Text>
+                            </View>
+                          )}
+                          <View style={styles.timeInfo}>
+                            <Ionicons name="time" size={12} color="#666666" />
+                            <Text style={styles.timeText}>{formattedDate} {formattedTime}</Text>
+                          </View>
+                        </View>
+                        
+                        {/* 좋아요 수 표시 - 내가 올린 사진이므로 좋아요 버튼 없이 수만 표시 */}
+                        <View style={styles.likeCountDisplay}>
+                          <Ionicons name="heart" size={14} color="#FF6B6B" />
+                          <Text style={styles.likeCountText}>{photo.like_count}</Text>
+                        </View>
+                      </View>
+                    </View>
+                  );
+                })}
+              </ScrollView>
+            </View>
+          )}
+
+
         </View>
         
         {/* 이미지 첨부 버튼 - 하단 고정 */}
         <TouchableOpacity 
-          style={[styles.imageButtonFixed, isLoading && styles.imageButtonDisabled]}
+          style={styles.imageButtonFixed}
           onPress={handleImageUpload}
-          disabled={isLoading}
         >
-          <Ionicons 
-            name={isLoading ? "hourglass" : "image"} 
-            size={32} 
-            color={isLoading ? "#999999" : "#000000"} 
-          />
+          <View style={styles.imageButtonInner}>
+            <Ionicons 
+              name="camera" 
+              size={24} 
+              color="#000000" 
+            />
+          </View>
         </TouchableOpacity>
         
         {/* 스크롤 안내 - 화면 하단 고정 */}
@@ -304,12 +537,107 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
         </TouchableOpacity>
       </View>
       
-      <View style={styles.screen}>
+      <ScrollView 
+        style={styles.secondScreenScrollView}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled={true}
+        scrollEnabled={allKeywordPhotos.length > 0}
+      >
         <View style={styles.secondScreen}>
-          <Text style={styles.secondScreenTitle}>다른 사람들의 영감</Text>
-          <Text style={styles.secondScreenSubtitle}>키워드로 해석한 다양한 사진들을 확인해보세요</Text>
+          {/* 키워드 제목 */}
+          <Text style={styles.secondScreenTitle}>{currentKeyword}</Text>
+          
+          {/* 통계 및 정렬 */}
+          <View style={styles.statsContainer}>
+            <View style={styles.statsButton}>
+              <Text style={styles.statsText}>총 {allKeywordPhotos.length}장의 사진</Text>
+            </View>
+            <TouchableOpacity style={styles.sortButton} onPress={handleSortToggle}>
+              <Ionicons name="swap-vertical" size={15} color="#000000" />
+              <Text style={styles.sortText}>{sortOrder === 'latest' ? '최신순' : '인기순'}</Text>
+            </TouchableOpacity>
+          </View>
+          
+          {/* 다른 유저들의 사진들 */}
+          {allKeywordPhotos.length > 0 ? (
+            <View style={styles.allPhotosContainer}>
+              {getSortedPhotos().map((photo) => {
+                const imageUrl = photo.image_path.startsWith('http') 
+                  ? photo.image_path 
+                  : `http://127.0.0.1:8000/${photo.image_path}`;
+                
+                // 업로드 시간 포맷팅
+                const uploadDate = new Date(photo.uploaded_at);
+                const formattedDate = `${uploadDate.getFullYear()}.${String(uploadDate.getMonth() + 1).padStart(2, '0')}.${String(uploadDate.getDate()).padStart(2, '0')}`;
+                const formattedTime = `${uploadDate.getHours() > 12 ? '오후' : '오전'} ${uploadDate.getHours() % 12 || 12}:${String(uploadDate.getMinutes()).padStart(2, '0')}`;
+                
+                return (
+                  <View key={photo.id} style={styles.allPhotoItem}>
+                    <Image 
+                      source={{ uri: imageUrl }}
+                      style={styles.allPhoto}
+                      resizeMode="cover"
+                    />
+                   
+                    {/* 사진 정보 */}
+                    <View style={styles.allPhotoInfoContainer}>
+                      <View style={styles.photoInfoLeft}>
+                        <View style={styles.userInfo}>
+                          <Ionicons name="person" size={12} color="#666666" />
+                          <Text style={styles.userText}>{photo.user_nickname}</Text>
+                        </View>
+                        
+                        {photo.location ? (
+                          <View style={styles.locationInfo}>
+                            <Ionicons name="location" size={12} color="#666666" />
+                            <Text style={styles.locationText}>{photo.location}</Text>
+                          </View>
+                        ) : (
+                          <View style={styles.locationInfo}>
+                            <Ionicons name="location" size={12} color="#CCCCCC" />
+                            <Text style={styles.locationTextDisabled}>위치 정보 없음</Text>
+                          </View>
+                        )}
+                        
+                        <View style={styles.timeInfo}>
+                          <Ionicons name="time" size={12} color="#666666" />
+                          <Text style={styles.timeText}>{formattedDate} {formattedTime}</Text>
+                        </View>
+                      </View>
+                      
+                      {/* 좋아요 버튼 - 내가 올린 사진이 아닐 때만 표시 */}
+                      {photo.user_id !== selectedUser.id && (
+                        <TouchableOpacity 
+                          style={styles.likeButton}
+                          onPress={() => handleLikeToggle(photo.id)}
+                        >
+                          <Ionicons 
+                            name={likedPhotos.has(photo.id) ? "heart" : "heart-outline"} 
+                            size={16} 
+                            color={likedPhotos.has(photo.id) ? "#FF6B6B" : "#666666"} 
+                          />
+                          <Text style={[
+                            styles.likeCount,
+                            { color: likedPhotos.has(photo.id) ? "#FF6B6B" : "#666666" }
+                          ]}>
+                            {photo.like_count}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          ) : (
+            <View style={styles.emptyAllPhotos}>
+              <Ionicons name="images-outline" size={48} color="#CCCCCC" />
+              <Text style={styles.emptyAllPhotosText}>아직 다른 사람들이 올린 사진이 없어요</Text>
+              <Text style={styles.emptyAllPhotosSubtext}>첫 번째로 사진을 올려보세요!</Text>
+            </View>
+          )}
         </View>
-      </View>
+      </ScrollView>
       </Animated.ScrollView>
 
       {/* Bottom Sheet Overlay */}
@@ -360,6 +688,11 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
                   <TouchableOpacity style={styles.keywordItem} onPress={() => {
                     setCurrentKeyword(item.keyword);
                     setCurrentKeywordId(item.id);
+                    setIsTodayKeyword(false);
+                    setUploadedPhoto(null); // 키워드 변경 시 업로드된 사진 초기화
+                    // 키워드 변경 시 해당 키워드의 사진들 로드
+                    loadKeywordPhotos(item.id);
+                    loadAllKeywordPhotos(item.id);
                     closeSheet();
                   }}>
                     <Text style={styles.keywordTextItem}>{item.keyword}</Text>
@@ -373,6 +706,16 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
           )}
         </Animated.View>
       )}
+
+      {/* ImageUploadScreen Modal */}
+      <ImageUploadScreen
+        selectedUser={selectedUser}
+        visible={isImageUploadVisible}
+        onClose={() => setIsImageUploadVisible(false)}
+        currentKeyword={currentKeyword}
+        currentKeywordId={currentKeywordId}
+        onUploadSuccess={handleUploadSuccess}
+      />
     </View>
   );
 });
@@ -454,15 +797,16 @@ const styles = StyleSheet.create({
   mainContent: {
     flex: 1,
     alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: 0,
   },
   mainContentWithoutPhoto: {
-    justifyContent: 'flex-start',
-    paddingTop: height * 0.3,
+    justifyContent: 'center',
+    paddingTop: 0,
+    marginTop: -height * 0.25,
   },
   mainContentWithPhoto: {
     justifyContent: 'flex-start',
-    paddingTop: height * 0.1,
+    paddingTop: height * 0.05,
   },
   keywordText: {
     fontSize: 20,
@@ -470,24 +814,36 @@ const styles = StyleSheet.create({
     color: '#000000',
     textAlign: 'center',
     letterSpacing: 2,
-    marginBottom: 30,
+    marginBottom: 20,
+    paddingHorizontal: 40,
   },
   keywordTextWithPhoto: {
-    marginBottom: 20,
+    marginBottom: 30,
   },
   imageButtonFixed: {
     position: 'absolute',
     bottom: 140,
     alignSelf: 'center',
-    width: 60,
-    height: 60,
-    borderRadius: 40,
+    width: 56,
+    height: 56,
+    borderRadius: 28,
     backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: '#E0E0E0',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
     zIndex: 1000,
+  },
+  imageButtonInner: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   imageButtonDisabled: {
     opacity: 0.5,
@@ -636,23 +992,304 @@ const styles = StyleSheet.create({
     color: '#666666',
     fontWeight: '400',
   },
+  secondScreenScrollView: {
+    height: height,
+  },
   secondScreen: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    paddingHorizontal: 40,
+    paddingHorizontal: 20,
+    paddingTop: 100,
+    paddingBottom: 100,
   },
   secondScreenTitle: {
-    fontSize: 28,
-    fontWeight: '300',
+    fontSize: 20,
+    fontFamily: 'BookkMyungjo-Bold',
     color: '#000000',
-    marginBottom: 12,
+    marginBottom: 30,
     textAlign: 'center',
+    letterSpacing: 2,
+  },
+  statsContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 20,
+    paddingHorizontal: 10,
+  },
+  statsButton: {
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 16,
+    borderRadius: 5,
+    height: 25,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  statsText: {
+    fontSize: 10,
+    color: '#000000',
+    fontWeight: '400',
+  },
+  sortButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F5F5F5',
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    borderRadius: 15,
+    gap: 8,
+    minWidth: 80,
+  },
+  sortText: {
+    fontSize: 10,
+    color: '#000000',
+    fontWeight: '400',
+  },
+  allPhotosContainer: {
+    paddingHorizontal: 0,
+    paddingBottom: 50,
+  },
+  allPhotosScrollView: {
+    flex: 1,
+  },
+  allPhotosScrollContent: {
+    paddingBottom: 150,
   },
   secondScreenSubtitle: {
     fontSize: 16,
     color: '#666666',
     textAlign: 'center',
     lineHeight: 24,
+  },
+  // 갤러리 관련 스타일
+  galleryContainer: {
+    marginTop: 30,
+    marginBottom: 20,
+  },
+  galleryTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  galleryScrollContent: {
+    paddingHorizontal: 20,
+  },
+  photoItem: {
+    width: 120,
+    marginRight: 12,
+    borderRadius: 8,
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  galleryPhoto: {
+    width: '100%',
+    height: 120,
+    borderTopLeftRadius: 8,
+    borderTopRightRadius: 8,
+  },
+  photoInfo: {
+    padding: 8,
+  },
+  photoLocation: {
+    fontSize: 12,
+    color: '#666666',
+    marginBottom: 4,
+  },
+  photoStats: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+
+  emptyGallery: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 40,
+    paddingHorizontal: 20,
+  },
+  emptyGalleryText: {
+    fontSize: 16,
+    color: '#666666',
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptyGallerySubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+  },
+  // 유저 사진 관련 스타일
+  userPhotosContainer: {
+    marginTop: 0,
+    marginBottom: 0,
+  },
+  userPhotosScrollContent: {
+    paddingHorizontal: 0,
+  },
+  userPhotoItem: {
+    width: width - 40,
+    marginHorizontal: 20,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  userPhoto: {
+    width: '100%',
+    height: '85%',
+    borderRadius: 12,
+  },
+  photoInfoContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    marginBottom: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  likeCountDisplay: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  likeCountText: {
+    fontSize: 12,
+    color: '#FF6B6B',
+    fontWeight: '500',
+  },
+  locationInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  locationText: {
+    fontSize: 12,
+    color: '#666666',
+    marginLeft: 4,
+  },
+  locationTextDisabled: {
+    fontSize: 12,
+    color: '#CCCCCC',
+    marginLeft: 4,
+  },
+  timeInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeText: {
+    fontSize: 12,
+    color: '#666666',
+    marginLeft: 4,
+  },
+  deleteButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  deleteButtonText: {
+    fontSize: 20,
+    color: '#FFFFFF',
+    fontWeight: 'bold',
+    textShadowColor: 'rgba(0, 0, 0, 0.5)',
+    textShadowOffset: { width: 1, height: 1 },
+    textShadowRadius: 2,
+  },
+
+  allPhotoItem: {
+    width: width - 40,
+    height: height * 0.5,
+    marginBottom: 20,
+    borderRadius: 12,
+    overflow: 'hidden',
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    alignSelf: 'center',
+  },
+  allPhotoInfoContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: 'rgba(255, 255, 255, 0.95)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderBottomLeftRadius: 12,
+    borderBottomRightRadius: 12,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  photoInfoLeft: {
+    flex: 1,
+  },
+  likeButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  likeCount: {
+    fontSize: 12,
+    fontWeight: '500',
+  },
+  userInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  userText: {
+    fontSize: 12,
+    color: '#666666',
+    marginLeft: 4,
+  },
+  emptyAllPhotos: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+    minHeight: height * 0.6,
+  },
+  emptyAllPhotosText: {
+    fontSize: 16,
+    color: '#666666',
+    marginTop: 20,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  emptyAllPhotosSubtext: {
+    fontSize: 14,
+    color: '#999999',
+    textAlign: 'center',
+    marginTop: 4,
+  },
+  allPhoto: {
+    width: '100%',
+    height: '100%',
+    borderTopLeftRadius: 12,
+    borderTopRightRadius: 12,
   },
 });

@@ -12,9 +12,10 @@ const Tab = createBottomTabNavigator();
 
 interface TabNavigatorProps {
   selectedUser: User;
+  onLogout?: () => void;
 }
 
-export default function TabNavigator({ selectedUser }: TabNavigatorProps) {
+export default function TabNavigator({ selectedUser, onLogout }: TabNavigatorProps) {
   const inspirationRef = useRef(null);
 
   return (
@@ -53,7 +54,7 @@ export default function TabNavigator({ selectedUser }: TabNavigatorProps) {
             
             if (currentRoute.name === 'Inspiration' && inspirationRef.current) {
               e.preventDefault();
-              inspirationRef.current.scrollToTop();
+              (inspirationRef.current as any)?.scrollToTop();
             }
           },
         })}
@@ -67,14 +68,15 @@ export default function TabNavigator({ selectedUser }: TabNavigatorProps) {
       />
       <Tab.Screen 
         name="Commission" 
-        component={ProfileScreen} 
+        component={SettingsScreen} 
         options={{ tabBarLabel: '공모' }}
       />
       <Tab.Screen 
         name="MyPhotos" 
-        component={SettingsScreen} 
-        options={{ tabBarLabel: '내 사진' }}
-      />
+        options={{ tabBarLabel: '마이페이지' }}
+      >
+        {() => <ProfileScreen selectedUser={selectedUser} onLogout={onLogout} />}
+      </Tab.Screen>
     </Tab.Navigator>
   );
 }

@@ -4,8 +4,8 @@ import { View, Text, StyleSheet } from 'react-native';
 export default function SettingsScreen() {
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>내 사진</Text>
-      <Text style={styles.subtitle}>내가 촬영한 사진들을 관리하세요</Text>
+      <Text style={styles.title}>공모</Text>
+      <Text style={styles.subtitle}>로케이션 수요자와 연결하세요</Text>
     </View>
   );
 }

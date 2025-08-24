@@ -25,6 +25,10 @@ export default function App() {
     setSelectedUser(user);
   };
 
+  const handleLogout = () => {
+    setSelectedUser(null);
+  };
+
   // 유저가 선택되지 않았으면 유저 선택 화면 표시
   if (!selectedUser) {
     return (
@@ -39,7 +43,7 @@ export default function App() {
   return (
     <SafeAreaProvider>
       <NavigationContainer>
-        <TabNavigator selectedUser={selectedUser} />
+        <TabNavigator selectedUser={selectedUser} onLogout={handleLogout} />
         <StatusBar style="auto" />
       </NavigationContainer>
     </SafeAreaProvider>

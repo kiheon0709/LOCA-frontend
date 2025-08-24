@@ -54,6 +54,7 @@ export interface Keyword {
 export interface Photo {
   id: number;
   user_id: number;
+  user_nickname: string;
   keyword_id: number;
   image_path: string;
   location?: string;
@@ -94,9 +95,21 @@ class ApiService {
     }
   }
 
+  async getTimeBasedKeyword(isMorning: boolean): Promise<Keyword> {
+    try {
+      const timeType = isMorning ? 'morning' : 'evening';
+      const response = await fetchWithTimeout(`${API_BASE_URL}/keywords/time-based?time_type=${timeType}`);
+      handleApiError(response, '시간 기반 키워드 조회 실패');
+      return response.json();
+    } catch (error) {
+      console.error('getTimeBasedKeyword error:', error);
+      throw error;
+    }
+  }
+
   // 사진 관련 API
-  async uploadPhoto(asset: any, userId: number, keywordId: number): Promise<any> {
-    console.log('uploadPhoto 호출됨:', { asset, userId, keywordId });
+  async uploadPhoto(asset: any, userId: number, keywordId: number, location?: string): Promise<any> {
+    console.log('uploadPhoto 호출됨:', { asset, userId, keywordId, location });
     
     try {
       const formData = new FormData();
@@ -106,10 +119,16 @@ class ApiService {
       formData.append('user_id', userId.toString());
       formData.append('keyword_id', keywordId.toString());
       
+      // 위치정보 추가
+      if (location && location.trim()) {
+        formData.append('location', location.trim());
+      }
+      
       console.log('FormData 구성 완료:', {
         asset: asset,
         user_id: userId,
-        keyword_id: keywordId
+        keyword_id: keywordId,
+        location: location
       });
       
       const response = await fetch(`${API_BASE_URL}/photos/upload-asset`, {
@@ -146,9 +165,15 @@ class ApiService {
       params.append('limit', limit.toString());
       params.append('offset', offset.toString());
 
-      const response = await fetchWithTimeout(`${API_BASE_URL}/photos/?${params}`);
+      const url = `${API_BASE_URL}/photos/?${params}`;
+      console.log('getPhotos 호출:', { keywordId, userId, url });
+
+      const response = await fetchWithTimeout(url);
       handleApiError(response, '사진 조회 실패');
-      return response.json();
+      
+      const photos = await response.json();
+      console.log('getPhotos 결과:', photos);
+      return photos;
     } catch (error) {
       console.error('getPhotos error:', error);
       throw error;
@@ -175,6 +200,18 @@ class ApiService {
       handleApiError(response, '좋아요 취소 실패');
     } catch (error) {
       console.error('unlikePhoto error:', error);
+      throw error;
+    }
+  }
+
+  async deletePhoto(photoId: number): Promise<void> {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/photos/${photoId}`, {
+        method: 'DELETE',
+      });
+      handleApiError(response, '사진 삭제 실패');
+    } catch (error) {
+      console.error('deletePhoto error:', error);
       throw error;
     }
   }
