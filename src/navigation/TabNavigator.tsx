@@ -3,9 +3,9 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 
 import HomeScreen from '../screens/HomeScreen';
-import SearchScreen from '../screens/SearchScreen';
+import ArchiveScreen from '../screens/ArchiveScreen';
 import ProfileScreen from '../screens/ProfileScreen';
-import SettingsScreen from '../screens/SettingsScreen';
+import ContestScreen from '../screens/ContestScreen';
 import { User } from '../services/api';
 
 const Tab = createBottomTabNavigator();
@@ -63,12 +63,12 @@ export default function TabNavigator({ selectedUser, onLogout }: TabNavigatorPro
       </Tab.Screen>
       <Tab.Screen 
         name="Archive" 
-        component={SearchScreen} 
+        component={ArchiveScreen} 
         options={{ tabBarLabel: '아카이브' }}
       />
       <Tab.Screen 
         name="Commission" 
-        component={SettingsScreen} 
+        component={ContestScreen} 
         options={{ tabBarLabel: '공모' }}
       />
       <Tab.Screen 

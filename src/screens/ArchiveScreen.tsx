@@ -18,7 +18,7 @@ import { apiService, Photo } from '../services/api';
 
 const { width, height } = Dimensions.get('window');
 
-export default function SearchScreen() {
+export default function ArchiveScreen() {
   const [photos, setPhotos] = useState<Photo[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -53,11 +53,11 @@ export default function SearchScreen() {
   const loadPhotos = async () => {
     try {
       setIsLoading(true);
-      console.log('SearchScreen: 사진 로딩 시작');
+      console.log('ArchiveScreen: 사진 로딩 시작');
       
       // 모든 사진을 가져오기 위해 keywordId와 userId를 전달하지 않음
       const photosData = await apiService.getPhotos(undefined, undefined, 50, 0);
-      console.log('SearchScreen: 사진 로딩 완료', photosData.length);
+      console.log('ArchiveScreen: 사진 로딩 완료', photosData.length);
       
       // 정렬 적용
       let sortedPhotos = [...photosData];
@@ -70,7 +70,7 @@ export default function SearchScreen() {
       
       setPhotos(sortedPhotos);
     } catch (error) {
-      console.error('SearchScreen: 사진 로딩 실패', error);
+      console.error('ArchiveScreen: 사진 로딩 실패', error);
       Alert.alert('오류', '사진을 불러오는데 실패했습니다.');
     } finally {
       setIsLoading(false);
@@ -85,14 +85,14 @@ export default function SearchScreen() {
     try {
       setIsLoading(true);
       setIsSearchMode(true);
-      console.log('SearchScreen: 검색 시작', searchQuery);
+      console.log('ArchiveScreen: 검색 시작', searchQuery);
       
       const searchResults = await apiService.searchPhotos(searchQuery, sortBy, 50, 0);
-      console.log('SearchScreen: 검색 완료', searchResults.length);
+      console.log('ArchiveScreen: 검색 완료', searchResults.length);
       
       setPhotos(searchResults);
     } catch (error) {
-      console.error('SearchScreen: 검색 실패', error);
+      console.error('ArchiveScreen: 검색 실패', error);
       Alert.alert('오류', '검색에 실패했습니다.');
     } finally {
       setIsLoading(false);
@@ -126,7 +126,7 @@ export default function SearchScreen() {
         setSelectedPhoto(prev => prev ? { ...prev, like_count: prev.like_count + 1 } : null);
       }
     } catch (error) {
-      console.error('SearchScreen: 좋아요 실패', error);
+      console.error('ArchiveScreen: 좋아요 실패', error);
       Alert.alert('오류', '좋아요 처리에 실패했습니다.');
     }
   };
