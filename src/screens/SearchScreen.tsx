@@ -25,10 +25,30 @@ export default function SearchScreen() {
   const [sortBy, setSortBy] = useState<'latest' | 'likes'>('latest');
   const [selectedPhoto, setSelectedPhoto] = useState<Photo | null>(null);
   const [isModalVisible, setIsModalVisible] = useState(false);
+  const [isSearchMode, setIsSearchMode] = useState(false);
 
   useEffect(() => {
-    loadPhotos();
-  }, [sortBy]);
+    // 검색 모드가 아닐 때만 모든 사진 로드
+    if (!isSearchMode) {
+      loadPhotos();
+    }
+  }, [sortBy, isSearchMode]);
+
+  // 검색어 변경 감지
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (searchQuery.trim() === '') {
+        // 검색어가 비어있으면 전체 사진 로드
+        setIsSearchMode(false);
+        loadPhotos();
+      } else if (searchQuery.trim().length > 0) {
+        // 검색어가 있으면 검색 실행
+        handleSearch();
+      }
+    }, 500); // 0.5초 지연
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const loadPhotos = async () => {
     try {
@@ -59,12 +79,12 @@ export default function SearchScreen() {
 
   const handleSearch = async () => {
     if (!searchQuery.trim()) {
-      loadPhotos();
       return;
     }
 
     try {
       setIsLoading(true);
+      setIsSearchMode(true);
       console.log('SearchScreen: 검색 시작', searchQuery);
       
       const searchResults = await apiService.searchPhotos(searchQuery, sortBy, 50, 0);
@@ -152,7 +172,7 @@ export default function SearchScreen() {
       <View style={styles.searchContainer}>
         <TextInput
           style={styles.searchInput}
-          placeholder="키워드로 검색..."
+          placeholder="검색어를 입력하세요"
           value={searchQuery}
           onChangeText={setSearchQuery}
           onSubmitEditing={handleSearch}
@@ -164,22 +184,41 @@ export default function SearchScreen() {
 
       {/* 정렬 버튼 */}
       <View style={styles.sortContainer}>
-        <TouchableOpacity 
-          style={[styles.sortButton, sortBy === 'latest' && styles.sortButtonActive]}
-          onPress={() => setSortBy('latest')}
-        >
-          <Text style={[styles.sortButtonText, sortBy === 'latest' && styles.sortButtonTextActive]}>
-            최신순
+        <View style={styles.photoCountContainer}>
+          <Text style={styles.photoCountText}>
+            총 {photos.length}개의 사진
           </Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[styles.sortButton, sortBy === 'likes' && styles.sortButtonActive]}
-          onPress={() => setSortBy('likes')}
-        >
-          <Text style={[styles.sortButtonText, sortBy === 'likes' && styles.sortButtonTextActive]}>
-            좋아요순
-          </Text>
-        </TouchableOpacity>
+        </View>
+        <View style={styles.sortButtonsContainer}>
+          <TouchableOpacity 
+            style={[styles.sortButton, sortBy === 'latest' && styles.sortButtonActive]}
+            onPress={() => {
+              setSortBy('latest');
+              // 검색 모드일 때는 현재 검색 결과를 다시 정렬
+              if (isSearchMode && searchQuery.trim()) {
+                handleSearch();
+              }
+            }}
+          >
+            <Text style={[styles.sortButtonText, sortBy === 'latest' && styles.sortButtonTextActive]}>
+              최신순
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.sortButton, sortBy === 'likes' && styles.sortButtonActive]}
+            onPress={() => {
+              setSortBy('likes');
+              // 검색 모드일 때는 현재 검색 결과를 다시 정렬
+              if (isSearchMode && searchQuery.trim()) {
+                handleSearch();
+              }
+            }}
+          >
+            <Text style={[styles.sortButtonText, sortBy === 'likes' && styles.sortButtonTextActive]}>
+              인기순
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       {/* 사진 그리드 */}
@@ -317,13 +356,26 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: 20,
     marginBottom: 20,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  photoCountContainer: {
+    flex: 1,
+  },
+  photoCountText: {
+    fontSize: 14,
+    color: '#666',
+    fontWeight: '500',
+  },
+  sortButtonsContainer: {
+    flexDirection: 'row',
   },
   sortButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
     borderRadius: 16,
     backgroundColor: '#F5F5F5',
-    marginRight: 10,
+    marginLeft: 10,
   },
   sortButtonActive: {
     backgroundColor: '#000',
