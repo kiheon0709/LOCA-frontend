@@ -71,6 +71,25 @@ export interface User {
   points: number;
 }
 
+export interface Contest {
+  id: number;
+  title: string;
+  description: string;
+  points: number;
+  deadline: string;
+  user_id: number;
+  status: string;
+  created_at: string;
+  photo_count: number;
+}
+
+export interface ContestCreate {
+  title: string;
+  description: string;
+  points: number;
+  deadline: string;
+}
+
 class ApiService {
   // 키워드 관련 API
   async getKeywords(): Promise<Keyword[]> {
@@ -253,6 +272,32 @@ class ApiService {
       return response.json();
     } catch (error) {
       console.error('getUsers error:', error);
+      throw error;
+    }
+  }
+
+  async getUserPoints(userId: number): Promise<number> {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/users/${userId}/points`);
+      handleApiError(response, '사용자 포인트 조회 실패');
+      const data = await response.json();
+      return data.points;
+    } catch (error) {
+      console.error('getUserPoints error:', error);
+      throw error;
+    }
+  }
+
+  async createContest(contestData: ContestCreate, userId: number): Promise<Contest> {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/contests/?user_id=${userId}`, {
+        method: 'POST',
+        body: JSON.stringify(contestData),
+      });
+      handleApiError(response, '공모 생성 실패');
+      return response.json();
+    } catch (error) {
+      console.error('createContest error:', error);
       throw error;
     }
   }
