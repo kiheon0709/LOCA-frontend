@@ -230,11 +230,13 @@ export default function SearchScreen() {
               
               {selectedPhoto && (
                 <>
-                  <Image 
-                    source={{ uri: selectedPhoto.image_path }}
-                    style={styles.modalImage}
-                    resizeMode="contain"
-                  />
+                  <View style={styles.modalImageContainer}>
+                    <Image 
+                      source={{ uri: selectedPhoto.image_path }}
+                      style={styles.modalImage}
+                      resizeMode="cover"
+                    />
+                  </View>
                   
                   <View style={styles.modalInfo}>
                     <View style={styles.modalInfoRow}>
@@ -373,10 +375,11 @@ const styles = StyleSheet.create({
   },
   modalContent: {
     width: width * 0.9,
-    maxHeight: height * 0.8,
+    height: height * 0.7,
     backgroundColor: '#fff',
     borderRadius: 12,
     overflow: 'hidden',
+    padding: 15, // 팝업창 안쪽 여백 추가
   },
   closeButton: {
     position: 'absolute',
@@ -390,9 +393,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  modalImageContainer: {
+    width: '100%',
+    flex: 1, // 고정 높이 대신 flex로 유동적 크기
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
   modalImage: {
     width: '100%',
-    height: width * 0.9 * 0.8,
+    height: '100%',
+    resizeMode: 'cover', // contain에서 cover로 변경하여 여백 최소화
   },
   modalInfo: {
     padding: 20,
