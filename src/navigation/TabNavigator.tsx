@@ -68,9 +68,10 @@ export default function TabNavigator({ selectedUser, onLogout }: TabNavigatorPro
       />
       <Tab.Screen 
         name="Commission" 
-        component={ContestScreen} 
         options={{ tabBarLabel: '공모' }}
-      />
+      >
+        {() => <ContestScreen selectedUser={selectedUser} />}
+      </Tab.Screen>
       <Tab.Screen 
         name="MyPhotos" 
         options={{ tabBarLabel: '마이페이지' }}

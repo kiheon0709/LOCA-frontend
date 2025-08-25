@@ -1,10 +1,10 @@
 // 환경별 API URL 설정
 const getApiBaseUrl = () => {
   // 로컬
-  return 'http://127.0.0.1:8000'; 
+  // return 'http://127.0.0.1:8000'; 
 
   // aws 서버
-  // return 'http://43.203.192.235:8000'; 
+  return 'http://43.203.192.235:8000'; 
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -351,6 +351,126 @@ class ApiService {
       return response.json();
     } catch (error) {
       console.error('getMyContests error:', error);
+      throw error;
+    }
+  }
+
+  // 공모에 제출된 사진 목록 조회
+  async getContestPhotos(contestId: number): Promise<Array<{ id: number; user_id: number; user_nickname: string; image_path: string; location?: string; submitted_at: string }>> {
+    try {
+      const response = await fetchWithTimeout(`${API_BASE_URL}/contests/${contestId}/photos`);
+      handleApiError(response, '공모 사진 목록 조회 실패');
+      return response.json();
+    } catch (error) {
+      console.error('getContestPhotos error:', error);
+      throw error;
+    }
+  }
+
+  // 공모 사진 채택
+  async selectContestPhoto(contestId: number, photoId: number, userId: number): Promise<any> {
+    try {
+      const params = new URLSearchParams();
+      params.append('photo_id', photoId.toString());
+      params.append('user_id', userId.toString());
+
+      const response = await fetchWithTimeout(`${API_BASE_URL}/contests/${contestId}/select?${params}`, {
+        method: 'PUT',
+      });
+      handleApiError(response, '공모 사진 채택 실패');
+      return response.json();
+    } catch (error) {
+      console.error('selectContestPhoto error:', error);
+      throw error;
+    }
+  }
+
+  // 공모 사진 업로드
+  async uploadContestPhoto(
+    contestId: number, 
+    imageUri: string, 
+    userId: number, 
+    location?: string, 
+    description?: string
+  ): Promise<any> {
+    console.log('uploadContestPhoto 호출됨:', { contestId, imageUri, userId, location, description });
+    try {
+      const formData = new FormData();
+      const fileName = imageUri.split('/').pop() || 'image.jpg';
+      const ext = fileName.split('.').pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = {
+        jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp',
+      };
+      const mimeType = (ext && mimeMap[ext]) ? mimeMap[ext] : 'image/jpeg';
+      
+      formData.append('file', {
+        uri: imageUri,
+        name: fileName,
+        type: mimeType,
+      } as any);
+      formData.append('user_id', userId.toString());
+      if (location && location.trim()) {
+        formData.append('location', location.trim());
+      }
+      if (description && description.trim()) {
+        formData.append('description', description.trim());
+      }
+      
+      console.log('FormData 구성 완료:', {
+        file: { uri: imageUri, name: fileName, type: mimeType },
+        user_id: userId, location: location, description: description
+      });
+      
+      const uploadResponse = await fetch(`${API_BASE_URL}/contests/${contestId}/photos`, {
+        method: 'POST',
+        body: formData,
+      });
+      
+      console.log('서버 응답 상태:', uploadResponse.status);
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
+        console.error('서버 응답 에러:', errorText);
+        throw new Error(`공모 사진 업로드 실패: ${uploadResponse.status}`);
+      }
+      
+      const result = await uploadResponse.json();
+      console.log('업로드 성공:', result);
+      return result;
+    } catch (error) {
+      console.error('uploadContestPhoto error:', error);
+      throw error;
+    }
+  }
+
+  // 공모 삭제
+  async deleteContest(contestId: number, userId: number): Promise<any> {
+    try {
+      const params = new URLSearchParams();
+      params.append('user_id', userId.toString());
+
+      const response = await fetchWithTimeout(`${API_BASE_URL}/contests/${contestId}?${params}`, {
+        method: 'DELETE',
+      });
+      handleApiError(response, '공모 삭제 실패');
+      return response.json();
+    } catch (error) {
+      console.error('deleteContest error:', error);
+      throw error;
+    }
+  }
+
+  async getAppliedContests(userId: number, limit = 20, offset = 0): Promise<Contest[]> {
+    try {
+      const params = new URLSearchParams();
+      params.append('user_id', userId.toString());
+      params.append('limit', limit.toString());
+      params.append('offset', offset.toString());
+
+      const response = await fetchWithTimeout(`${API_BASE_URL}/contests/applied?${params}`);
+      handleApiError(response, '지원한 공모 목록 조회 실패');
+      return response.json();
+    } catch (error) {
+      console.error('getAppliedContests error:', error);
       throw error;
     }
   }

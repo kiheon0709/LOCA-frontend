@@ -10,21 +10,54 @@ import {
   ScrollView,
   Platform,
   Animated,
-  Alert
+  Alert,
+  Image,
+  Dimensions,
+  FlatList
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { apiService, Contest } from '../services/api';
+import * as ImagePicker from 'expo-image-picker';
+import { apiService, Contest, User, getImageUrl } from '../services/api';
+
+const { width, height } = Dimensions.get('window');
 
 type TabType = 'all' | 'my' | 'applied';
 
-export default function ContestScreen() {
+interface ContestScreenProps {
+  selectedUser: User;
+}
+
+export default function ContestScreen({ selectedUser }: ContestScreenProps) {
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
   
+  // 공모 참여 모달 상태
+  const [isParticipateModalVisible, setIsParticipateModalVisible] = useState(false);
+  const [selectedContest, setSelectedContest] = useState<Contest | null>(null);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
+  const [imageInfo, setImageInfo] = useState<{width: number, height: number} | null>(null);
+  const [location, setLocation] = useState('');
+  const [description, setDescription] = useState('');
+  const [isUploading, setIsUploading] = useState(false);
+  
+  // 내 공모 사진 보기 모달 상태
+  const [isPhotoViewModalVisible, setIsPhotoViewModalVisible] = useState(false);
+  const [contestPhotos, setContestPhotos] = useState<Array<{ id: number; user_id: number; user_nickname: string; image_path: string; location?: string; submitted_at: string; description?: string }>>([]);
+  const [isLoadingPhotos, setIsLoadingPhotos] = useState(false);
+  
+  // 사진 상세 팝업 모달 상태
+  const [isPhotoDetailModalVisible, setIsPhotoDetailModalVisible] = useState(false);
+  const [selectedPhoto, setSelectedPhoto] = useState<any>(null);
+  
+  // 지원한 공모(내 제출 사진) 팝업 상태
+  const [isAppliedPhotoModalVisible, setIsAppliedPhotoModalVisible] = useState(false);
+  const [appliedPhoto, setAppliedPhoto] = useState<any>(null);
+
   // 공모 목록 상태
   const [allContests, setAllContests] = useState<Contest[]>([]);
   const [myContests, setMyContests] = useState<Contest[]>([]);
+  const [appliedContests, setAppliedContests] = useState<Contest[]>([]);
   const [isLoadingContests, setIsLoadingContests] = useState(false);
   const [contestError, setContestError] = useState<string | null>(null);
   
@@ -38,6 +71,9 @@ export default function ContestScreen() {
   const [currentPoints, setCurrentPoints] = useState(0);
   const [isLoadingPoints, setIsLoadingPoints] = useState(true);
   const [contestDeadline, setContestDeadline] = useState('');
+
+  // 유저 맵 (id -> nickname)
+  const [userNicknameById, setUserNicknameById] = useState<Record<number, string>>({});
 
   const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -81,7 +117,6 @@ export default function ContestScreen() {
     setContestDescription('');
     setContestReward('');
     setContestDeadline('');
-    setSelectedDate(new Date());
   };
 
   const handleDateChange = (event: any, date?: Date) => {
@@ -96,6 +131,186 @@ export default function ContestScreen() {
         day: '2-digit'
       }).replace(/\./g, '.');
       setContestDeadline(formattedDate);
+    }
+  };
+
+  // 공모 참여 모달 관련 함수들
+  const handleOpenParticipateModal = (contest: Contest) => {
+    setSelectedContest(contest);
+    // 전체 공모에서만 참여 모달, 내 공모에서는 사진 보기 모달
+    if (activeTab === 'my') {
+      setIsPhotoViewModalVisible(true);
+      setIsLoadingPhotos(true);
+      apiService.getContestPhotos(contest.id)
+        .then((photos) => setContestPhotos(photos))
+        .catch((e) => {
+          console.error('공모 사진 조회 실패:', e);
+          Alert.alert('오류', '공모 사진을 불러오는데 실패했습니다.');
+        })
+        .finally(() => setIsLoadingPhotos(false));
+    } else {
+      setIsParticipateModalVisible(true);
+    }
+  };
+
+  const handleCloseParticipateModal = () => {
+    setIsParticipateModalVisible(false);
+    setSelectedContest(null);
+    setSelectedImage(null);
+    setImageInfo(null);
+    setLocation('');
+    setDescription('');
+  };
+
+  const handleSelectImage = async () => {
+    try {
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [4, 3],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        setSelectedImage(asset.uri);
+        setImageInfo({ width: asset.width, height: asset.height });
+      }
+    } catch (error) {
+      console.error('이미지 선택 실패:', error);
+      Alert.alert('오류', '이미지를 선택하는데 실패했습니다.');
+    }
+  };
+
+  const handleSubmitContestPhoto = async () => {
+    if (!selectedImage || !selectedContest) {
+      Alert.alert('알림', '이미지를 선택해주세요.');
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      
+      await apiService.uploadContestPhoto(
+        selectedContest.id,
+        selectedImage,
+        selectedUser.id,
+        location,
+        description
+      );
+
+      Alert.alert('성공', '공모에 사진이 제출되었습니다!', [
+        { text: '확인', onPress: handleCloseParticipateModal }
+      ]);
+    } catch (error) {
+      console.error('공모 사진 업로드 실패:', error);
+      Alert.alert('오류', '사진 업로드에 실패했습니다.');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handleClosePhotoViewModal = () => {
+    setIsPhotoViewModalVisible(false);
+    setContestPhotos([]);
+    setSelectedContest(null);
+  };
+
+  // 공모 사진 렌더링 함수
+  const renderContestPhoto = ({ item }: { item: any }) => (
+    <TouchableOpacity 
+      style={styles.photoItem}
+      onPress={() => handlePhotoPress(item)}
+      activeOpacity={0.9}
+    >
+      <Image 
+        source={{ uri: getImageUrl(item.image_path) }}
+        style={styles.photoImage}
+        resizeMode="cover"
+      />
+    </TouchableOpacity>
+  );
+
+  // 사진 클릭 핸들러
+  const handlePhotoPress = (photo: any) => {
+    setSelectedPhoto(photo);
+    setIsPhotoDetailModalVisible(true);
+  };
+
+  // 사진 상세 모달 닫기
+  const handleClosePhotoDetailModal = () => {
+    setIsPhotoDetailModalVisible(false);
+    setSelectedPhoto(null);
+  };
+
+  // 사진 채택하기
+  const handleAdoptPhoto = async (photoId: number) => {
+    try {
+      if (!selectedContest) {
+        Alert.alert('오류', '공모 정보를 찾을 수 없습니다.');
+        return;
+      }
+
+      await apiService.selectContestPhoto(selectedContest.id, photoId, selectedUser.id);
+      
+      Alert.alert('성공', '사진이 채택되었습니다.', [
+        {
+          text: '확인',
+          onPress: () => {
+            handleClosePhotoDetailModal();
+            // 공모 목록 새로고침
+            loadContests();
+          }
+        }
+      ]);
+    } catch (error) {
+      console.error('사진 채택 실패:', error);
+      Alert.alert('오류', '사진 채택에 실패했습니다.');
+    }
+  };
+
+  // 공모 삭제하기
+  const handleDeleteContest = async (contest: Contest) => {
+    Alert.alert(
+      '공모 삭제',
+      '정말로 이 공모를 삭제하시겠습니까?\n삭제된 공모는 복구할 수 없습니다.',
+      [
+        {
+          text: '취소',
+          style: 'cancel'
+        },
+        {
+          text: '삭제',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await apiService.deleteContest(contest.id, selectedUser.id);
+              Alert.alert('성공', '공모가 삭제되었습니다.');
+              // 공모 목록 새로고침
+              loadContests();
+            } catch (error) {
+              console.error('공모 삭제 실패:', error);
+              Alert.alert('오류', '공모 삭제에 실패했습니다.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // 날짜 포맷 함수
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (error) {
+      return dateString;
     }
   };
 
@@ -122,16 +337,15 @@ export default function ContestScreen() {
       setIsLoadingContests(true);
       setContestError(null);
       
-      // TODO: 실제 사용자 ID로 변경 필요
-      const userId = 1;
-      
-      const [allContestsData, myContestsData] = await Promise.all([
+      const [allContestsData, myContestsData, appliedContestsData] = await Promise.all([
         apiService.getContests('active'),
-        apiService.getMyContests(userId)
+        apiService.getMyContests(selectedUser.id),
+        apiService.getAppliedContests(selectedUser.id)
       ]);
       
       setAllContests(allContestsData);
       setMyContests(myContestsData);
+      setAppliedContests(appliedContestsData);
     } catch (error) {
       console.error('공모 목록 로딩 실패:', error);
       setContestError('공모 목록을 불러오는데 실패했습니다.');
@@ -143,12 +357,10 @@ export default function ContestScreen() {
   // 사용자 포인트 로딩
   useEffect(() => {
     const loadUserPoints = async () => {
-      try {
-        setIsLoadingPoints(true);
-        // TODO: 실제 사용자 ID로 변경 필요
-        const userId = 1; // 임시 사용자 ID
-        const points = await apiService.getUserPoints(userId);
-        setCurrentPoints(points);
+          try {
+      setIsLoadingPoints(true);
+      const points = await apiService.getUserPoints(selectedUser.id);
+      setCurrentPoints(points);
       } catch (error) {
         console.error('포인트 로딩 실패:', error);
         Alert.alert('오류', '포인트 정보를 불러오는데 실패했습니다.');
@@ -166,9 +378,24 @@ export default function ContestScreen() {
     loadContests();
   }, []);
 
+  // 유저 닉네임 로드 (전체 공모 탭 표시용)
+  useEffect(() => {
+    const loadUsers = async () => {
+      try {
+        const users = await apiService.getUsers();
+        const map: Record<number, string> = {};
+        users.forEach(u => { map[u.id] = u.nickname; });
+        setUserNicknameById(map);
+      } catch (e) {
+        console.error('유저 목록 로딩 실패:', e);
+      }
+    };
+    loadUsers();
+  }, []);
+
   // 탭 변경 시 데이터 새로고침
   useEffect(() => {
-    if (activeTab === 'all' || activeTab === 'my') {
+    if (activeTab === 'all' || activeTab === 'my' || activeTab === 'applied') {
       loadContests();
     }
   }, [activeTab]);
@@ -204,17 +431,14 @@ export default function ContestScreen() {
     try {
       setIsSubmitting(true);
       
-      // TODO: 실제 사용자 ID로 변경 필요
-      const userId = 1;
-      
       const contestData = {
         title: contestTitle.trim(),
         description: contestDescription.trim(),
         points: parseInt(contestReward),
-        deadline: contestDeadline
+        deadline: selectedDate.toISOString()
       };
       
-      await apiService.createContest(contestData, userId);
+      await apiService.createContest(contestData, selectedUser.id);
       
       Alert.alert('성공', '공모가 성공적으로 생성되었습니다!', [
         {
@@ -257,7 +481,7 @@ export default function ContestScreen() {
         case 'active':
           return '진행중';
         case 'completed':
-          return '완료';
+          return '마감';
         case 'cancelled':
           return '취소';
         default:
@@ -270,7 +494,7 @@ export default function ContestScreen() {
         case 'active':
           return '#4CAF50';
         case 'completed':
-          return '#2196F3';
+          return '#F44336';
         case 'cancelled':
           return '#F44336';
         default:
@@ -278,46 +502,92 @@ export default function ContestScreen() {
       }
     };
 
+    // 현재 유저가 올린 공모인지, 마감 여부 확인
+    const isMyContest = contest.user_id === selectedUser.id;
+    const isCompleted = contest.status !== 'active';
+    const isDisabled = isCompleted || (activeTab === 'all' && isMyContest);
+
     return (
       <TouchableOpacity 
-        style={styles.contestCard}
-        activeOpacity={0.7}
+        style={[
+          styles.contestCard,
+          isDisabled && styles.disabledContestCard
+        ]}
+        activeOpacity={isDisabled ? 1 : 0.7}
         onPress={() => {
-          // TODO: 공모 상세 화면으로 이동
-          console.log('공모 상세 화면으로 이동:', contest.id);
+          if (activeTab === 'applied') {
+            openAppliedPhotoModal(contest);
+            return;
+          }
+          if (!isDisabled) {
+            // 공모 참여 모달 열기
+            handleOpenParticipateModal(contest);
+          }
         }}
       >
         <View style={styles.contestHeader}>
-          <Text style={styles.contestTitle} numberOfLines={2}>
-            {contest.title}
-          </Text>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(contest.status) }]}>
-            <Text style={styles.statusText}>{getStatusText(contest.status)}</Text>
+          <View style={styles.titleContainer}>
+            <Text style={[
+              styles.contestTitle, 
+              isDisabled && styles.disabledContestTitle
+            ]} numberOfLines={2}>
+              {contest.title}
+            </Text>
+            {isDisabled && (
+              <View style={styles.myContestBadge}>
+                <Text style={styles.myContestBadgeText}>내 공모</Text>
+              </View>
+            )}
+          </View>
+          <View style={styles.headerRight}>
+            <View style={[styles.statusBadge, { backgroundColor: getStatusColor(contest.status) }]}>
+              <Text style={styles.statusText}>{getStatusText(contest.status)}</Text>
+            </View>
+            {/* 전체 공모 탭에서만 업로더 표시 */}
+            {activeTab === 'all' && (
+              <Text style={styles.uploaderText}>올린 사람: {userNicknameById[contest.user_id] || `유저 ${contest.user_id}`}</Text>
+            )}
           </View>
         </View>
         
-        <Text style={styles.contestDescription} numberOfLines={3}>
+        <Text style={[
+          styles.contestDescription,
+          isDisabled && styles.disabledContestDescription
+        ]} numberOfLines={3}>
           {contest.description}
         </Text>
         
         <View style={styles.contestFooter}>
           <View style={styles.contestInfo}>
-            <Ionicons name="trophy" size={16} color="#FFD700" />
-            <Text style={styles.pointsText}>{contest.points} 포인트</Text>
+            <Text style={styles.pointsText}>+{contest.points}p</Text>
           </View>
           
           <View style={styles.contestInfo}>
-            <Ionicons name="camera" size={16} color="#666666" />
-            <Text style={styles.photoCountText}>{contest.photo_count}개 참여</Text>
+            <Ionicons name="people" size={14} color="#666666" />
+            <Text style={styles.photoCountText}>{contest.photo_count}명 참여</Text>
           </View>
           
           <View style={styles.contestInfo}>
-            <Ionicons name="time" size={16} color="#666666" />
+            <Ionicons name="time" size={14} color="#666666" />
             <Text style={styles.deadlineText}>
               마감: {formatDate(contest.deadline)}
             </Text>
           </View>
         </View>
+
+        {/* 내 공모 탭에서 마감된 공모에만 삭제 버튼 표시 */}
+        {activeTab === 'my' && isCompleted && (
+          <View style={styles.deleteButtonContainer}>
+            <TouchableOpacity 
+              style={styles.deleteButton}
+              onPress={() => handleDeleteContest(contest)}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="trash-outline" size={16} color="#FF4444" />
+              <Text style={styles.deleteButtonText}>삭제</Text>
+            </TouchableOpacity>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -348,15 +618,21 @@ export default function ContestScreen() {
           <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
             {allContests.length === 0 ? (
               <View style={styles.emptyContainer}>
-                <Ionicons name="trophy-outline" size={48} color="#CCCCCC" />
+                <Ionicons name="star-outline" size={48} color="#CCCCCC" />
                 <Text style={styles.emptyText}>진행중인 공모가 없습니다</Text>
               </View>
             ) : (
-              allContests.map((contest) => (
-                <View key={contest.id} style={styles.contestCardWrapper}>
-                  {renderContestCard(contest)}
-                </View>
-              ))
+              (() => {
+                const activeFirstAll = [
+                  ...allContests.filter(c => c.status === 'active'),
+                  ...allContests.filter(c => c.status !== 'active'),
+                ];
+                return activeFirstAll.map((contest) => (
+                  <View key={contest.id} style={styles.contestCardWrapper}>
+                    {renderContestCard(contest)}
+                  </View>
+                ));
+              })()
             )}
           </ScrollView>
         );
@@ -369,25 +645,64 @@ export default function ContestScreen() {
                 <Text style={styles.emptyText}>내가 올린 공모가 없습니다</Text>
               </View>
             ) : (
-              myContests.map((contest) => (
-                <View key={contest.id} style={styles.contestCardWrapper}>
-                  {renderContestCard(contest)}
-                </View>
-              ))
+              (() => {
+                const activeFirstMy = [
+                  ...myContests.filter(c => c.status === 'active'),
+                  ...myContests.filter(c => c.status !== 'active'),
+                ];
+                return activeFirstMy.map((contest) => (
+                  <View key={contest.id} style={styles.contestCardWrapper}>
+                    {renderContestCard(contest)}
+                  </View>
+                ));
+              })()
             )}
           </ScrollView>
         );
       case 'applied':
         return (
-          <View style={styles.contentContainer}>
-            <View style={styles.emptyContainer}>
-              <Ionicons name="checkmark-circle-outline" size={48} color="#CCCCCC" />
-              <Text style={styles.emptyText}>지원한 공모가 없습니다</Text>
-            </View>
-          </View>
+          <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
+            {appliedContests.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="checkmark-circle-outline" size={48} color="#CCCCCC" />
+                <Text style={styles.emptyText}>지원한 공모가 없습니다</Text>
+              </View>
+            ) : (
+              (() => {
+                const activeFirstApplied = [
+                  ...appliedContests.filter(c => c.status === 'active'),
+                  ...appliedContests.filter(c => c.status !== 'active'),
+                ];
+                return activeFirstApplied.map((contest) => (
+                  <View key={contest.id} style={styles.contestCardWrapper}>
+                    {renderContestCard(contest)}
+                  </View>
+                ));
+              })()
+            )}
+          </ScrollView>
         );
       default:
         return null;
+    }
+  };
+
+  // 내가 올린 사진(지원한 공모용) 불러와서 팝업 열기
+  const openAppliedPhotoModal = async (contest: Contest) => {
+    try {
+      setSelectedContest(contest);
+      // 해당 공모의 사진들 중 현재 사용자 제출만 필터
+      const photos = await apiService.getContestPhotos(contest.id);
+      const mine = photos.find(p => p.user_id === selectedUser.id);
+      if (!mine) {
+        Alert.alert('알림', '이 공모에 제출한 사진을 찾을 수 없습니다.');
+        return;
+      }
+      setAppliedPhoto(mine);
+      setIsAppliedPhotoModalVisible(true);
+    } catch (e) {
+      console.error('지원 사진 조회 실패:', e);
+      Alert.alert('오류', '지원한 사진을 불러오는데 실패했습니다.');
     }
   };
 
@@ -606,6 +921,419 @@ export default function ContestScreen() {
           </View>
         </SafeAreaView>
       </Modal>
+
+      {/* 공모 참여 모달 */}
+      <Modal
+        visible={isParticipateModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          {/* 헤더 */}
+          <View style={styles.modalHeader}>
+            <TouchableOpacity 
+              style={styles.closeButton}
+              onPress={handleCloseParticipateModal}
+            >
+              <Ionicons name="close" size={24} color="#000000" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>공모 참여하기</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          {/* 콘텐츠 */}
+          <ScrollView style={styles.modalContent} showsVerticalScrollIndicator={false}>
+            {/* 공모 정보 */}
+            {selectedContest && (
+              <>
+                {/* 제목과 설명 컨테이너 */}
+                <View style={styles.contestInfoSection}>
+                  <Text style={styles.contestInfoTitle}>{selectedContest.title}</Text>
+                  <Text style={styles.contestInfoDescription}>{selectedContest.description}</Text>
+                </View>
+                
+                {/* 정보 카드들 */}
+                <View style={styles.contestInfoCards}>
+                  <View style={styles.infoCard}>
+                    <Text style={styles.infoCardLabel}>포인트</Text>
+                    <Text style={[styles.infoCardValue, { color: '#F39C12' }]}>+{selectedContest.points}p</Text>
+                  </View>
+                  
+                  <View style={styles.infoCard}>
+                    <Text style={styles.infoCardLabel}>참여자</Text>
+                    <Text style={styles.infoCardValue}>{selectedContest.photo_count}명</Text>
+                  </View>
+                  
+                  <View style={styles.infoCard}>
+                    <Text style={styles.infoCardLabel}>마감일</Text>
+                    <Text style={styles.infoCardValue}>
+                      {new Date(selectedContest.deadline).toLocaleDateString('ko-KR', {
+                        month: '2-digit',
+                        day: '2-digit'
+                      })}
+                    </Text>
+                  </View>
+                  
+                  <View style={styles.infoCard}>
+                    <Text style={styles.infoCardLabel}>올린 유저</Text>
+                    <Text style={styles.infoCardValue}>유저 {selectedContest.user_id}</Text>
+                  </View>
+                </View>
+              </>
+            )}
+
+            {/* 사진 선택 */}
+            <View style={styles.inputSection}>
+              <Text style={styles.sectionTitle}>사진 선택</Text>
+              <TouchableOpacity 
+                style={styles.imageSelectButton}
+                onPress={handleSelectImage}
+                activeOpacity={0.7}
+              >
+                {selectedImage ? (
+                  <View style={styles.selectedImageContainer}>
+                    <Image 
+                      source={{ uri: selectedImage }}
+                      style={styles.selectedImage}
+                      resizeMode="cover"
+                    />
+                    <TouchableOpacity 
+                      style={styles.changeImageButton}
+                      onPress={handleSelectImage}
+                    >
+                      <Text style={styles.changeImageText}>사진 변경</Text>
+                    </TouchableOpacity>
+                  </View>
+                ) : (
+                  <View style={styles.imageSelectPlaceholder}>
+                    <Ionicons name="camera" size={32} color="#CCCCCC" />
+                    <Text style={styles.imageSelectText}>사진을 선택해주세요</Text>
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
+
+            {/* 위치 정보 */}
+            <View style={styles.inputSection}>
+              <Text style={styles.sectionTitle}>위치 정보</Text>
+              <TextInput
+                style={styles.locationInput}
+                placeholder="사진을 찍은 위치를 입력하세요"
+                placeholderTextColor="#999999"
+                value={location}
+                onChangeText={setLocation}
+              />
+            </View>
+
+            {/* 제출 버튼 */}
+            <View style={styles.submitButtonContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.submitButton,
+                  (!selectedImage || !location.trim() || isUploading) && styles.submitButtonDisabled
+                ]}
+                onPress={handleSubmitContestPhoto}
+                disabled={!selectedImage || !location.trim() || isUploading}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.submitButtonText}>
+                  {isUploading ? '업로드 중...' : '공모에 참여하기'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </ScrollView>
+        </SafeAreaView>
+      </Modal>
+
+      {/* 공모 사진 조회 모달 (내 공모 탭) */}
+      <Modal
+        visible={isPhotoViewModalVisible}
+        animationType="slide"
+     >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity style={styles.closeButton} onPress={handleClosePhotoViewModal}>
+              <Ionicons name="close" size={24} color="#000000" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>내 공모</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          {/* 공모 제목 */}
+          <View style={styles.modalContestTitleContainer}>
+            <Text style={styles.modalContestTitle}>{selectedContest?.title}</Text>
+          </View>
+
+          {/* 공모 설명 */}
+          <View style={styles.modalContestDescriptionContainer}>
+            <Text style={styles.modalContestDescription}>{selectedContest?.description}</Text>
+          </View>
+
+          {/* 공모 정보 (참여자 수, 리워드, 마감일) */}
+          <View style={styles.modalContestInfoContainer}>
+            <View style={styles.modalContestInfoItem}>
+              <Ionicons name="people" size={16} color="#666" />
+              <Text style={styles.modalContestInfoText}>{selectedContest?.photo_count || 0}명 참여</Text>
+            </View>
+            <View style={styles.modalContestInfoItem}>
+              <Ionicons name="add" size={16} color="#F39C12" />
+              <Text style={[styles.modalContestInfoText, styles.rewardText]}>+{selectedContest?.points || 0}p</Text>
+            </View>
+            <View style={styles.modalContestInfoItem}>
+              <Ionicons name="calendar" size={16} color="#666" />
+              <Text style={styles.modalContestInfoText}>
+                {selectedContest?.deadline ? new Date(selectedContest.deadline).toLocaleDateString('ko-KR') : '마감일 없음'}
+              </Text>
+            </View>
+          </View>
+
+          {isLoadingPhotos ? (
+            <View style={styles.loadingContainer}>
+              <Text style={styles.loadingText}>사진을 불러오는 중...</Text>
+            </View>
+          ) : contestPhotos.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="camera-outline" size={48} color="#CCCCCC" />
+              <Text style={styles.emptyText}>아직 참여한 사진이 없습니다</Text>
+            </View>
+          ) : (
+            <FlatList
+              data={contestPhotos}
+              renderItem={renderContestPhoto}
+              keyExtractor={(item) => item.id.toString()}
+              numColumns={2}
+              contentContainerStyle={styles.photoGrid}
+              showsVerticalScrollIndicator={false}
+            />
+          )}
+
+          {/* 사진 상세 팝업 - 내 공모 모달 내부에 포함 */}
+          {isPhotoDetailModalVisible && selectedPhoto && (
+            <View style={styles.photoDetailOverlay}>
+              <TouchableOpacity 
+                style={styles.photoDetailBackground}
+                onPress={handleClosePhotoDetailModal}
+                activeOpacity={1}
+              >
+                <View style={styles.photoDetailContent}>
+                  <TouchableOpacity 
+                    style={styles.photoDetailCloseButton}
+                    onPress={handleClosePhotoDetailModal}
+                  >
+                    <Ionicons name="close" size={24} color="#fff" />
+                  </TouchableOpacity>
+                  
+                  <View style={styles.photoDetailImageContainer}>
+                    <Image 
+                      source={{ uri: getImageUrl(selectedPhoto.image_path) }}
+                      style={styles.photoDetailImage}
+                      resizeMode="cover"
+                    />
+                  </View>
+                  
+                  <View style={styles.photoDetailInfo}>
+                    <View style={styles.photoDetailInfoRow}>
+                      <Text style={styles.photoDetailLocation}>
+                        {selectedPhoto.location || '위치 정보 없음'}
+                      </Text>
+                    </View>
+                    
+                    <View style={styles.photoDetailInfoRow}>
+                      <Text style={styles.photoDetailUser}>
+                        {selectedPhoto.user_nickname || '알 수 없는 사용자'}
+                      </Text>
+                      <Text style={styles.photoDetailDate}>
+                        {formatDate(selectedPhoto.submitted_at)}
+                      </Text>
+                    </View>
+
+                    {selectedPhoto.description && (
+                      <View style={styles.photoDetailDescriptionContainer}>
+                        <Text style={styles.photoDetailDescription}>
+                          {selectedPhoto.description}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* 채택하기 버튼 */}
+                  <View style={styles.adoptButtonContainer}>
+                    <TouchableOpacity 
+                      style={styles.adoptButton}
+                      onPress={() => handleAdoptPhoto(selectedPhoto.id)}
+                    >
+                      <Ionicons name="checkmark-circle" size={20} color="#FFFFFF" />
+                      <Text style={styles.adoptButtonText}>채택하기</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+        </SafeAreaView>
+      </Modal>
+
+      {/* 지원한 공모 사진 모달 */}
+      <Modal
+        visible={isAppliedPhotoModalVisible}
+        animationType="slide"
+        presentationStyle="fullScreen"
+      >
+        <SafeAreaView style={styles.modalContainer}>
+          <View style={styles.modalHeader}>
+            <TouchableOpacity style={styles.closeButton} onPress={() => setIsAppliedPhotoModalVisible(false)}>
+              <Ionicons name="close" size={24} color="#000000" />
+            </TouchableOpacity>
+            <Text style={styles.modalTitle}>지원한 공모</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          {/* 공모 정보 */}
+          {selectedContest && (
+            <>
+              <View style={styles.contestInfoSection}>
+                <Text style={styles.contestInfoTitle}>{selectedContest.title}</Text>
+                <Text style={styles.contestInfoDescription}>{selectedContest.description}</Text>
+              </View>
+
+              <View style={styles.contestInfoCards}>
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoCardLabel}>포인트</Text>
+                  <Text style={[styles.infoCardValue, { color: '#F39C12' }]}>+{selectedContest.points}p</Text>
+                </View>
+                
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoCardLabel}>참여자</Text>
+                  <Text style={styles.infoCardValue}>{selectedContest.photo_count}명</Text>
+                </View>
+                
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoCardLabel}>마감일</Text>
+                  <Text style={styles.infoCardValue}>
+                    {new Date(selectedContest.deadline).toLocaleDateString('ko-KR', {
+                      month: '2-digit',
+                      day: '2-digit'
+                    })}
+                  </Text>
+                </View>
+                
+                <View style={styles.infoCard}>
+                  <Text style={styles.infoCardLabel}>올린 유저</Text>
+                  <Text style={styles.infoCardValue}>유저 {selectedContest.user_id}</Text>
+                </View>
+              </View>
+            </>
+          )}
+
+          {/* 사진 정보 */}
+          {appliedPhoto && (
+            <>
+              <View style={styles.inputSection}>
+                <Text style={styles.sectionTitle}>사진</Text>
+                <TouchableOpacity 
+                  style={styles.imageSelectButton}
+                  onPress={() => handleSelectImage} // 이미지 변경은 현재 모달에서 지원하지 않음
+                >
+                  <View style={styles.selectedImageContainer}>
+                    <Image 
+                      source={{ uri: getImageUrl(appliedPhoto.image_path) }}
+                      style={styles.selectedImage}
+                      resizeMode="cover"
+                    />
+                    <TouchableOpacity 
+                      style={styles.changeImageButton}
+                      onPress={() => handleSelectImage}
+                    >
+                      <Text style={styles.changeImageText}>사진 변경</Text>
+                    </TouchableOpacity>
+                  </View>
+                </TouchableOpacity>
+              </View>
+
+              <View style={styles.inputSection}>
+                <Text style={styles.sectionTitle}>위치 정보</Text>
+                <TextInput
+                  style={styles.locationInput}
+                  placeholder="사진을 찍은 위치를 입력하세요"
+                  placeholderTextColor="#999999"
+                  value={appliedPhoto.location || ''}
+                  onChangeText={(text) => {
+                    // 위치 정보는 수정할 수 없으므로 무시
+                  }}
+                  editable={false}
+                />
+              </View>
+
+              <View style={styles.inputSection}>
+                <Text style={styles.sectionTitle}>제출 시간</Text>
+                <Text style={styles.infoCardValue}>{formatDate(appliedPhoto.submitted_at)}</Text>
+              </View>
+
+              {appliedPhoto.description && (
+                <View style={styles.inputSection}>
+                  <Text style={styles.sectionTitle}>설명</Text>
+                  <Text style={styles.infoCardValue}>{appliedPhoto.description}</Text>
+                </View>
+              )}
+            </>
+          )}
+        </SafeAreaView>
+      </Modal>
+
+      {/* 내가 지원한 공모 - 내 제출 사진 팝업 */}
+      <Modal
+        visible={isAppliedPhotoModalVisible}
+        transparent
+        animationType="fade"
+        statusBarTranslucent={true}
+        onRequestClose={() => setIsAppliedPhotoModalVisible(false)}
+      >
+        <View style={styles.photoDetailModalOverlay}>
+          <View style={styles.photoDetailModalBackground}>
+            <View style={styles.photoDetailModalContent}>
+              <TouchableOpacity 
+                style={styles.photoDetailCloseButton}
+                onPress={() => setIsAppliedPhotoModalVisible(false)}
+              >
+                <Ionicons name="close" size={24} color="#fff" />
+              </TouchableOpacity>
+
+              {appliedPhoto && (
+                <>
+                  <View style={styles.photoDetailImageContainer}>
+                    <Image 
+                      source={{ uri: getImageUrl(appliedPhoto.image_path) }}
+                      style={styles.photoDetailImage}
+                      resizeMode="cover"
+                    />
+                  </View>
+
+                  <View style={styles.photoDetailInfo}>
+                    <View style={styles.photoDetailInfoRow}>
+                      <Text style={styles.photoDetailLocation}>
+                        {appliedPhoto.location || '위치 정보 없음'}
+                      </Text>
+                    </View>
+                    <View style={styles.photoDetailInfoRow}>
+                      <Text style={styles.photoDetailUser}>
+                        {appliedPhoto.user_nickname || '나'}
+                      </Text>
+                      <Text style={styles.photoDetailDate}>
+                        {formatDate(appliedPhoto.submitted_at)}
+                      </Text>
+                    </View>
+                    {appliedPhoto.description ? (
+                      <View style={styles.photoDetailDescriptionContainer}>
+                        <Text style={styles.photoDetailDescription}>{appliedPhoto.description}</Text>
+                      </View>
+                    ) : null}
+                  </View>
+                </>
+              )}
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -723,19 +1451,46 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#F0F0F0',
   },
+  disabledContestCard: {
+    backgroundColor: '#F8F8F8',
+    opacity: 0.6,
+    borderColor: '#E0E0E0',
+  },
   contestHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
     marginBottom: 12,
   },
+  titleContainer: {
+    flex: 1,
+    marginRight: 12,
+  },
   contestTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: '#000',
-    flex: 1,
-    marginRight: 12,
     fontFamily: 'BookkMyungjo-Bold',
+  },
+  disabledContestTitle: {
+    color: '#999',
+  },
+  myContestBadge: {
+    backgroundColor: '#666',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    alignSelf: 'flex-start',
+    marginTop: 4,
+  },
+  myContestBadgeText: {
+    fontSize: 10,
+    color: '#fff',
+    fontWeight: '600',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  headerRight: {
+    alignItems: 'flex-end',
   },
   statusBadge: {
     paddingHorizontal: 8,
@@ -750,12 +1505,21 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontFamily: 'BookkMyungjo-Bold',
   },
+  uploaderText: {
+    fontSize: 12,
+    color: '#666',
+    marginTop: 4,
+    fontFamily: 'BookkMyungjo-Light',
+  },
   contestDescription: {
     fontSize: 14,
     color: '#666',
     lineHeight: 20,
     marginBottom: 16,
     fontFamily: 'BookkMyungjo-Light',
+  },
+  disabledContestDescription: {
+    color: '#999',
   },
   contestFooter: {
     flexDirection: 'row',
@@ -767,20 +1531,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   pointsText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '600',
-    color: '#FFD700',
-    marginLeft: 4,
+    color: '#F39C12',
     fontFamily: 'BookkMyungjo-Bold',
   },
   photoCountText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginLeft: 4,
     fontFamily: 'BookkMyungjo-Light',
   },
   deadlineText: {
-    fontSize: 14,
+    fontSize: 12,
     color: '#666',
     marginLeft: 4,
     fontFamily: 'BookkMyungjo-Light',
@@ -816,6 +1579,11 @@ const styles = StyleSheet.create({
   modalContainer: {
     flex: 1,
     backgroundColor: '#FFFFFF',
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -1013,5 +1781,336 @@ const styles = StyleSheet.create({
   },
   iosDatePicker: {
     backgroundColor: '#FFFFFF',
+  },
+  contestInfoSection: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  contestInfoCards: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 24,
+  },
+  infoCard: {
+    flex: 1,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 8,
+    padding: 12,
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    alignItems: 'center',
+  },
+  infoCardLabel: {
+    fontSize: 10,
+    color: '#666666',
+    marginBottom: 4,
+    fontFamily: 'BookkMyungjo-Light',
+  },
+  infoCardValue: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#000000',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  contestInfoTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000000',
+    marginBottom: 8,
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  contestInfoDescription: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 12,
+    fontFamily: 'BookkMyungjo-Light',
+  },
+  contestInfoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  contestInfoText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#F39C12',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  imageSelectButton: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    overflow: 'hidden',
+    marginBottom: 20,
+  },
+  selectedImageContainer: {
+    width: '100%',
+    height: 200,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  selectedImage: {
+    width: '100%',
+    height: '100%',
+  },
+  changeImageButton: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.7)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  changeImageText: {
+    fontSize: 12,
+    color: '#FFFFFF',
+  },
+  imageSelectPlaceholder: {
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F8F8F8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#E0E0E0',
+    borderStyle: 'dashed',
+  },
+  imageSelectText: {
+    fontSize: 14,
+    color: '#999999',
+    marginTop: 12,
+    fontFamily: 'BookkMyungjo-Light',
+  },
+  locationInput: {
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#000000',
+    backgroundColor: '#FFFFFF',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  photoGrid: {
+    paddingHorizontal: 10,
+  },
+
+  photoImage: {
+    width: '100%',
+    height: '100%',
+  },
+
+  // 공모 제목 컨테이너
+  modalContestTitleContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+  },
+  modalContestTitle: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#000000',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  // 아카이브 스타일과 동일한 사진 아이템
+  photoItem: {
+    width: (width - 40) / 2,
+    aspectRatio: 1,
+    margin: 5,
+    borderRadius: 8,
+    overflow: 'hidden',
+    backgroundColor: '#F5F5F5',
+  },
+  // 공모 설명 컨테이너
+  modalContestDescriptionContainer: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+  },
+  modalContestDescription: {
+    fontSize: 16,
+    color: '#666',
+    lineHeight: 22,
+    fontFamily: 'BookkMyungjo-Light',
+  },
+  // 공모 정보 컨테이너
+  modalContestInfoContainer: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    backgroundColor: '#F8F8F8',
+    marginHorizontal: 20,
+    borderRadius: 8,
+  },
+  modalContestInfoItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  modalContestInfoText: {
+    fontSize: 14,
+    color: '#666',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  rewardText: {
+    color: '#F39C12',
+  },
+  // 사진 상세 팝업 모달 스타일 (아카이브와 동일)
+  photoDetailModalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    zIndex: 99999,
+    elevation: 99999,
+  },
+  photoDetailModalBackground: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoDetailModalContent: {
+    width: width * 0.9,
+    height: height * 0.7,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    padding: 15,
+    zIndex: 100000,
+    elevation: 100000,
+  },
+  photoDetailCloseButton: {
+    position: 'absolute',
+    top: 15,
+    right: 15,
+    zIndex: 1,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  photoDetailImageContainer: {
+    width: '100%',
+    flex: 1,
+    backgroundColor: '#F5F5F5',
+    borderRadius: 8,
+    overflow: 'hidden',
+  },
+  photoDetailImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  photoDetailInfo: {
+    padding: 20,
+  },
+  photoDetailInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  photoDetailLocation: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    flex: 1,
+  },
+  photoDetailUser: {
+    fontSize: 14,
+    color: '#666',
+  },
+  photoDetailDate: {
+    fontSize: 12,
+    color: '#999',
+  },
+  photoDetailDescriptionContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E0E0E0',
+  },
+  photoDetailDescription: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    fontFamily: 'BookkMyungjo-Light',
+  },
+  // 내 공모 모달 내부 사진 상세 팝업 스타일
+  photoDetailOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.9)',
+    zIndex: 9999,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoDetailBackground: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  photoDetailContent: {
+    width: width * 0.9,
+    height: height * 0.7,
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    overflow: 'hidden',
+    padding: 15,
+  },
+  // 채택하기 버튼 스타일
+  adoptButtonContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+  },
+  adoptButton: {
+    backgroundColor: '#4CAF50',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    gap: 8,
+  },
+  adoptButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '600',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  deleteButtonContainer: {
+    paddingHorizontal: 20,
+    paddingTop: 10,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: '#FFEBEB',
+    borderWidth: 1,
+    borderColor: '#FF4444',
+  },
+  deleteButtonText: {
+    color: '#FF4444',
+    fontSize: 14,
+    fontWeight: '600',
+    marginLeft: 8,
+    fontFamily: 'BookkMyungjo-Bold',
   },
 });

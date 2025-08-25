@@ -21,7 +21,6 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
   const [uploadedPhoto, setUploadedPhoto] = useState<string | null>(null);
   const [imageInfo, setImageInfo] = useState<{width: number, height: number} | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<boolean | null>(null);
   const scrollY = useRef(new Animated.Value(0)).current;
   const scrollViewRef = useRef(null);
   const [isSheetVisible, setIsSheetVisible] = useState(false);
@@ -44,23 +43,12 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
 
   // 컴포넌트 마운트 시 연결 상태 확인 및 시간 기반 키워드 설정
   useEffect(() => {
-    checkConnection();
     getCurrentTimeBasedKeyword();
   }, []);
 
 
 
 
-
-  const checkConnection = async () => {
-    try {
-      const isConnected = await apiService.checkConnection();
-      setConnectionStatus(isConnected);
-    } catch (error) {
-      console.error('연결 확인 중 오류:', error);
-      setConnectionStatus(false);
-    }
-  };
 
   const getCurrentTimeBasedKeyword = async () => {
     try {
@@ -402,15 +390,6 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
             </TouchableOpacity>
           </View>
         </View>
-
-        {/* 연결 상태 표시 (개발용) */}
-        {connectionStatus !== null && (
-          <View style={styles.connectionStatus}>
-            <Text style={styles.statusText}>
-              {connectionStatus ? '✅ 서버 연결됨' : '❌ 서버 연결 안됨'}
-            </Text>
-          </View>
-        )}
 
         {/* 메인 콘텐츠 */}
         <View style={[
@@ -784,21 +763,6 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: '#000000',
     fontWeight: '400',
-  },
-  connectionStatus: {
-    position: 'absolute',
-    top: 100,
-    right: 15,
-    backgroundColor: 'rgba(0,0,0,0.7)',
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    zIndex: 1000,
-  },
-  statusText: {
-    fontSize: 10,
-    color: '#FFFFFF',
-    fontWeight: '600',
   },
   mainContent: {
     flex: 1,
