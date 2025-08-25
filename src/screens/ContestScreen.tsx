@@ -14,13 +14,19 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { apiService } from '../services/api';
+import { apiService, Contest } from '../services/api';
 
 type TabType = 'all' | 'my' | 'applied';
 
 export default function ContestScreen() {
   const [activeTab, setActiveTab] = useState<TabType>('all');
   const [isCreateModalVisible, setIsCreateModalVisible] = useState(false);
+  
+  // 공모 목록 상태
+  const [allContests, setAllContests] = useState<Contest[]>([]);
+  const [myContests, setMyContests] = useState<Contest[]>([]);
+  const [isLoadingContests, setIsLoadingContests] = useState(false);
+  const [contestError, setContestError] = useState<string | null>(null);
   
   // 공모 생성 폼 상태
   const [contestTitle, setContestTitle] = useState('');
@@ -110,6 +116,30 @@ export default function ContestScreen() {
     }
   }, [isDatePickerVisible]);
 
+  // 공모 목록 로딩 함수
+  const loadContests = async () => {
+    try {
+      setIsLoadingContests(true);
+      setContestError(null);
+      
+      // TODO: 실제 사용자 ID로 변경 필요
+      const userId = 1;
+      
+      const [allContestsData, myContestsData] = await Promise.all([
+        apiService.getContests('active'),
+        apiService.getMyContests(userId)
+      ]);
+      
+      setAllContests(allContestsData);
+      setMyContests(myContestsData);
+    } catch (error) {
+      console.error('공모 목록 로딩 실패:', error);
+      setContestError('공모 목록을 불러오는데 실패했습니다.');
+    } finally {
+      setIsLoadingContests(false);
+    }
+  };
+
   // 사용자 포인트 로딩
   useEffect(() => {
     const loadUserPoints = async () => {
@@ -130,6 +160,18 @@ export default function ContestScreen() {
 
     loadUserPoints();
   }, []);
+
+  // 공모 목록 로딩
+  useEffect(() => {
+    loadContests();
+  }, []);
+
+  // 탭 변경 시 데이터 새로고침
+  useEffect(() => {
+    if (activeTab === 'all' || activeTab === 'my') {
+      loadContests();
+    }
+  }, [activeTab]);
 
   // 공모 생성 함수
   const handleCreateContest = async () => {
@@ -185,6 +227,8 @@ export default function ContestScreen() {
             setContestReward('');
             setContestDeadline('');
             setRewardError('');
+            // 공모 목록 새로고침
+            loadContests();
           }
         }
       ]);
@@ -197,24 +241,149 @@ export default function ContestScreen() {
     }
   };
 
+  // 공모 카드 컴포넌트
+  const renderContestCard = (contest: Contest) => {
+    const formatDate = (dateString: string) => {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('ko-KR', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    };
+
+    const getStatusText = (status: string) => {
+      switch (status) {
+        case 'active':
+          return '진행중';
+        case 'completed':
+          return '완료';
+        case 'cancelled':
+          return '취소';
+        default:
+          return '알 수 없음';
+      }
+    };
+
+    const getStatusColor = (status: string) => {
+      switch (status) {
+        case 'active':
+          return '#4CAF50';
+        case 'completed':
+          return '#2196F3';
+        case 'cancelled':
+          return '#F44336';
+        default:
+          return '#999999';
+      }
+    };
+
+    return (
+      <TouchableOpacity 
+        style={styles.contestCard}
+        activeOpacity={0.7}
+        onPress={() => {
+          // TODO: 공모 상세 화면으로 이동
+          console.log('공모 상세 화면으로 이동:', contest.id);
+        }}
+      >
+        <View style={styles.contestHeader}>
+          <Text style={styles.contestTitle} numberOfLines={2}>
+            {contest.title}
+          </Text>
+          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(contest.status) }]}>
+            <Text style={styles.statusText}>{getStatusText(contest.status)}</Text>
+          </View>
+        </View>
+        
+        <Text style={styles.contestDescription} numberOfLines={3}>
+          {contest.description}
+        </Text>
+        
+        <View style={styles.contestFooter}>
+          <View style={styles.contestInfo}>
+            <Ionicons name="trophy" size={16} color="#FFD700" />
+            <Text style={styles.pointsText}>{contest.points} 포인트</Text>
+          </View>
+          
+          <View style={styles.contestInfo}>
+            <Ionicons name="camera" size={16} color="#666666" />
+            <Text style={styles.photoCountText}>{contest.photo_count}개 참여</Text>
+          </View>
+          
+          <View style={styles.contestInfo}>
+            <Ionicons name="time" size={16} color="#666666" />
+            <Text style={styles.deadlineText}>
+              마감: {formatDate(contest.deadline)}
+            </Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
   const renderTabContent = () => {
+    if (isLoadingContests) {
+      return (
+        <View style={styles.loadingContainer}>
+          <Text style={styles.loadingText}>공모 목록을 불러오는 중...</Text>
+        </View>
+      );
+    }
+
+    if (contestError) {
+      return (
+        <View style={styles.errorContainer}>
+          <Text style={styles.errorText}>{contestError}</Text>
+          <TouchableOpacity style={styles.retryButton} onPress={loadContests}>
+            <Text style={styles.retryButtonText}>다시 시도</Text>
+          </TouchableOpacity>
+        </View>
+      );
+    }
+
     switch (activeTab) {
       case 'all':
         return (
-          <View style={styles.contentContainer}>
-            <Text style={styles.contentText}>전체 공모 목록</Text>
-          </View>
+          <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
+            {allContests.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="trophy-outline" size={48} color="#CCCCCC" />
+                <Text style={styles.emptyText}>진행중인 공모가 없습니다</Text>
+              </View>
+            ) : (
+              allContests.map((contest) => (
+                <View key={contest.id} style={styles.contestCardWrapper}>
+                  {renderContestCard(contest)}
+                </View>
+              ))
+            )}
+          </ScrollView>
         );
       case 'my':
         return (
-          <View style={styles.contentContainer}>
-            <Text style={styles.contentText}>내가 올린 공모</Text>
-          </View>
+          <ScrollView style={styles.contentContainer} showsVerticalScrollIndicator={false}>
+            {myContests.length === 0 ? (
+              <View style={styles.emptyContainer}>
+                <Ionicons name="person-outline" size={48} color="#CCCCCC" />
+                <Text style={styles.emptyText}>내가 올린 공모가 없습니다</Text>
+              </View>
+            ) : (
+              myContests.map((contest) => (
+                <View key={contest.id} style={styles.contestCardWrapper}>
+                  {renderContestCard(contest)}
+                </View>
+              ))
+            )}
+          </ScrollView>
         );
       case 'applied':
         return (
           <View style={styles.contentContainer}>
-            <Text style={styles.contentText}>지원한 공모</Text>
+            <View style={styles.emptyContainer}>
+              <Ionicons name="checkmark-circle-outline" size={48} color="#CCCCCC" />
+              <Text style={styles.emptyText}>지원한 공모가 없습니다</Text>
+            </View>
           </View>
         );
       default:
@@ -479,15 +648,142 @@ const styles = StyleSheet.create({
   },
   contentContainer: {
     flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
     paddingHorizontal: 20,
+    paddingTop: 20,
   },
   contentText: {
     fontSize: 16,
     color: '#666',
     textAlign: 'center',
     fontFamily: 'BookkMyungjo-Bold',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: '#666',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    color: '#F44336',
+    textAlign: 'center',
+    marginBottom: 20,
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  retryButton: {
+    backgroundColor: '#000',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  retryButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  emptyText: {
+    fontSize: 16,
+    color: '#999',
+    textAlign: 'center',
+    marginTop: 16,
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  contestCardWrapper: {
+    marginBottom: 16,
+  },
+  contestCard: {
+    backgroundColor: '#fff',
+    borderRadius: 12,
+    padding: 16,
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 2,
+    },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    borderWidth: 1,
+    borderColor: '#F0F0F0',
+  },
+  contestHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    marginBottom: 12,
+  },
+  contestTitle: {
+    fontSize: 18,
+    fontWeight: '600',
+    color: '#000',
+    flex: 1,
+    marginRight: 12,
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  statusBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    minWidth: 60,
+    alignItems: 'center',
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#fff',
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  contestDescription: {
+    fontSize: 14,
+    color: '#666',
+    lineHeight: 20,
+    marginBottom: 16,
+    fontFamily: 'BookkMyungjo-Light',
+  },
+  contestFooter: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  contestInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  pointsText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#FFD700',
+    marginLeft: 4,
+    fontFamily: 'BookkMyungjo-Bold',
+  },
+  photoCountText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 4,
+    fontFamily: 'BookkMyungjo-Light',
+  },
+  deadlineText: {
+    fontSize: 14,
+    color: '#666',
+    marginLeft: 4,
+    fontFamily: 'BookkMyungjo-Light',
   },
   floatingButton: {
     position: 'absolute',

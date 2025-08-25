@@ -1,13 +1,10 @@
 // 환경별 API URL 설정
 const getApiBaseUrl = () => {
-  // React Native에서는 __DEV__를 사용하여 개발/프로덕션 환경을 구분
-  if (__DEV__) {
-    // 개발 환경: iOS 시뮬레이터에서는 127.0.0.1 사용
-    return 'http://127.0.0.1:8000';
-  } else {
-    // 프로덕션 환경: 실제 서버 URL
-    return 'https://your-production-server.com';
-  }
+  // 로컬
+  return 'http://127.0.0.1:8000'; 
+
+  // aws 서버
+  // return 'http://43.203.192.235:8000'; 
 };
 
 const API_BASE_URL = getApiBaseUrl();
@@ -298,6 +295,38 @@ class ApiService {
       return response.json();
     } catch (error) {
       console.error('createContest error:', error);
+      throw error;
+    }
+  }
+
+  async getContests(status?: string, limit = 20, offset = 0): Promise<Contest[]> {
+    try {
+      const params = new URLSearchParams();
+      if (status) params.append('status', status);
+      params.append('limit', limit.toString());
+      params.append('offset', offset.toString());
+
+      const response = await fetchWithTimeout(`${API_BASE_URL}/contests/?${params}`);
+      handleApiError(response, '공모 목록 조회 실패');
+      return response.json();
+    } catch (error) {
+      console.error('getContests error:', error);
+      throw error;
+    }
+  }
+
+  async getMyContests(userId: number, limit = 20, offset = 0): Promise<Contest[]> {
+    try {
+      const params = new URLSearchParams();
+      params.append('user_id', userId.toString());
+      params.append('limit', limit.toString());
+      params.append('offset', offset.toString());
+
+      const response = await fetchWithTimeout(`${API_BASE_URL}/contests/?${params}`);
+      handleApiError(response, '내 공모 목록 조회 실패');
+      return response.json();
+    } catch (error) {
+      console.error('getMyContests error:', error);
       throw error;
     }
   }
