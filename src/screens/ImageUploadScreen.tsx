@@ -68,9 +68,8 @@ const ImageUploadScreen: React.FC<ImageUploadScreenProps> = ({
     try {
       setIsLoading(true);
       
-      // 백엔드에 업로드
-      const asset = { uri: selectedImage, width: imageInfo?.width || 0, height: imageInfo?.height || 0 };
-      await apiService.uploadPhoto(asset, selectedUser.id, currentKeywordId, location);
+      // 백엔드에 업로드 - 실제 파일 데이터 전송
+      await apiService.uploadPhoto(selectedImage, selectedUser.id, currentKeywordId, location);
       
       Alert.alert('성공', '사진이 업로드되었습니다!', [
         {

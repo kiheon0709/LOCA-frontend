@@ -9,6 +9,15 @@ const getApiBaseUrl = () => {
 
 const API_BASE_URL = getApiBaseUrl();
 
+// 이미지 URL 처리 함수
+const getImageUrl = (imagePath: string): string => {
+  if (!imagePath) return '';
+  if (imagePath.startsWith('http')) {
+    return imagePath;
+  }
+  return `${API_BASE_URL}/${imagePath}`;
+};
+
 // 공통 에러 처리 함수
 const handleApiError = (response: Response, errorMessage: string) => {
   if (!response.ok) {
@@ -27,8 +36,7 @@ const fetchWithTimeout = async (url: string, options: RequestInit = {}, timeout 
       ...options,
       signal: controller.signal,
       headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
+        ...(options.headers || {}),
       },
     });
     clearTimeout(timeoutId);
@@ -124,46 +132,59 @@ class ApiService {
   }
 
   // 사진 관련 API
-  async uploadPhoto(asset: any, userId: number, keywordId: number, location?: string): Promise<any> {
-    console.log('uploadPhoto 호출됨:', { asset, userId, keywordId, location });
+  async uploadPhoto(imageUri: string, userId: number, keywordId: number, location?: string): Promise<any> {
+    console.log('uploadPhoto 호출됨:', { imageUri, userId, keywordId, location });
     
     try {
       const formData = new FormData();
       
-      // asset 객체를 JSON 문자열로 변환하여 전송
-      formData.append('asset', JSON.stringify(asset));
+      // 파일명 및 MIME 타입 추정
+      const fileName = imageUri.split('/').pop() || 'image.jpg';
+      const ext = fileName.split('.').pop()?.toLowerCase();
+      const mimeMap: Record<string, string> = {
+        jpg: 'image/jpeg',
+        jpeg: 'image/jpeg',
+        png: 'image/png',
+        heic: 'image/heic',
+        webp: 'image/webp',
+      };
+      const mimeType = (ext && mimeMap[ext]) ? mimeMap[ext] : 'image/jpeg';
+
+      // React Native 권장 방식: 파일 객체로 전송
+      formData.append('file', {
+        uri: imageUri,
+        name: fileName,
+        type: mimeType,
+      } as any);
+
       formData.append('user_id', userId.toString());
       formData.append('keyword_id', keywordId.toString());
       
-      // 위치정보 추가
       if (location && location.trim()) {
         formData.append('location', location.trim());
       }
       
       console.log('FormData 구성 완료:', {
-        asset: asset,
+        file: { uri: imageUri, name: fileName, type: mimeType },
         user_id: userId,
         keyword_id: keywordId,
         location: location
       });
       
-      const response = await fetch(`${API_BASE_URL}/photos/upload-asset`, {
+      const uploadResponse = await fetch(`${API_BASE_URL}/photos/upload`, {
         method: 'POST',
         body: formData,
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
       });
       
-      console.log('서버 응답 상태:', response.status);
+      console.log('서버 응답 상태:', uploadResponse.status);
       
-      if (!response.ok) {
-        const errorText = await response.text();
+      if (!uploadResponse.ok) {
+        const errorText = await uploadResponse.text();
         console.error('서버 응답 에러:', errorText);
-        throw new Error(`사진 업로드 실패: ${response.status}`);
+        throw new Error(`사진 업로드 실패: ${uploadResponse.status}`);
       }
       
-      const result = await response.json();
+      const result = await uploadResponse.json();
       console.log('업로드 성공:', result);
       return result;
       
@@ -290,6 +311,9 @@ class ApiService {
       const response = await fetchWithTimeout(`${API_BASE_URL}/contests/?user_id=${userId}`, {
         method: 'POST',
         body: JSON.stringify(contestData),
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
       handleApiError(response, '공모 생성 실패');
       return response.json();
@@ -344,3 +368,4 @@ class ApiService {
 }
 
 export const apiService = new ApiService();
+export { getImageUrl };

@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, TouchableOpacity, Dimensions, Animated, Image, 
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageInfo } from 'expo-image-picker';
-import { apiService, User, Photo } from '../services/api';
+import { apiService, User, Photo, getImageUrl } from '../services/api';
 import { colors } from '../styles/colors';
 import ImageUploadScreen from './ImageUploadScreen';
 
@@ -225,9 +225,19 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
           onPress: async () => {
             try {
               await apiService.deletePhoto(photoId);
+              
               // 삭제 성공 시 사진 목록 새로고침
-              loadKeywordPhotos(currentKeywordId);
-              loadAllKeywordPhotos(currentKeywordId);
+              await loadKeywordPhotos(currentKeywordId);
+              await loadAllKeywordPhotos(currentKeywordId);
+              
+              // 상태 즉시 업데이트를 위한 강제 리렌더링
+              setKeywordPhotos(prev => [...prev]);
+              setAllKeywordPhotos(prev => [...prev]);
+              
+              // uploadedPhoto 상태도 초기화 (키워드 중앙 정렬을 위해)
+              setUploadedPhoto(null);
+              setImageInfo(null);
+              
             } catch (error) {
               console.error('사진 삭제 실패:', error);
               Alert.alert('삭제 실패', '사진을 삭제하는 중 오류가 발생했습니다.');
@@ -447,10 +457,8 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
                 snapToAlignment="center"
               >
                 {keywordPhotos.map((photo) => {
-                  // 이미지 경로를 전체 URL로 변환
-                  const imageUrl = photo.image_path.startsWith('http') 
-                    ? photo.image_path 
-                    : `http://127.0.0.1:8000/${photo.image_path}`;
+                  // 이미지 URL 처리
+                  const imageUrl = getImageUrl(photo.image_path);
                   
                   // 업로드 시간 포맷팅
                   const uploadDate = new Date(photo.uploaded_at);
@@ -562,9 +570,7 @@ const HomeScreen = forwardRef<any, HomeScreenProps>(({ selectedUser }, ref) => {
           {allKeywordPhotos.length > 0 ? (
             <View style={styles.allPhotosContainer}>
               {getSortedPhotos().map((photo) => {
-                const imageUrl = photo.image_path.startsWith('http') 
-                  ? photo.image_path 
-                  : `http://127.0.0.1:8000/${photo.image_path}`;
+                const imageUrl = getImageUrl(photo.image_path);
                 
                 // 업로드 시간 포맷팅
                 const uploadDate = new Date(photo.uploaded_at);

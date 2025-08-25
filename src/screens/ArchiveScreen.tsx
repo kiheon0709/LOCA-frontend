@@ -14,7 +14,7 @@ import {
   Alert
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiService, Photo } from '../services/api';
+import { apiService, Photo, getImageUrl } from '../services/api';
 
 const { width, height } = Dimensions.get('window');
 
@@ -138,7 +138,7 @@ export default function ArchiveScreen() {
       activeOpacity={0.9}
     >
       <Image 
-        source={{ uri: item.image_path }}
+        source={{ uri: getImageUrl(item.image_path) }}
         style={styles.photoImage}
         resizeMode="cover"
       />
@@ -271,7 +271,7 @@ export default function ArchiveScreen() {
                 <>
                   <View style={styles.modalImageContainer}>
                     <Image 
-                      source={{ uri: selectedPhoto.image_path }}
+                      source={{ uri: getImageUrl(selectedPhoto.image_path) }}
                       style={styles.modalImage}
                       resizeMode="cover"
                     />

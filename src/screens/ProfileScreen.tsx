@@ -11,7 +11,7 @@ import {
   Alert 
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { apiService, User, Photo } from '../services/api';
+import { apiService, User, Photo, getImageUrl } from '../services/api';
 
 const { width } = Dimensions.get('window');
 
@@ -67,9 +67,7 @@ export default function ProfileScreen({ selectedUser, onLogout }: ProfileScreenP
   };
 
   const renderPhoto = ({ item }: { item: Photo }) => {
-    const imageUrl = item.image_path.startsWith('http') 
-      ? item.image_path 
-      : `http://127.0.0.1:8000/${item.image_path}`;
+    const imageUrl = getImageUrl(item.image_path);
 
     return (
       <View style={styles.photoItem}>
